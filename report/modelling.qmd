@@ -1,0 +1,1719 @@
+```{r, echo = FALSE, message = FALSE}
+source(here::here("scripts/setup.R"))
+```
+
+# 7 Classification
+
+## **7.1 Class imbalance**
+
+The class distribution of our response variable is imbalanced. We found that approximately 80% of the observations belong to the "no-delay" class, while the remaining 20% belong to the "delay" class. The presence of class imbalance creates a situation where our models are more inclined to prioritize and predict the majority class (no-default) due to its higher prevalence in the data set. Consequently, this bias can result in sub-optimal performance when it comes to accurately identifying instances of the minority class (default), which is of particular importance in our analysis.
+
+Moreover, the imbalanced class distribution leads to a distorted evaluation of model performance. Traditional evaluation metrics, such as accuracy, may be misleading and fail to capture the true predictive capabilities of the model. Machine learning algorithms that assume a balanced class distribution, such as **Logistic regression**, **Support Vector Machines** (SVM), and **Neural Networks**, may be particularly affected by this imbalance and yield compromised results.
+
+Therefore, it is imperative for us to address the class imbalance issue in our modeling approach. During our class, we explored various methods to address class imbalance, including both up-sampling and down-sampling techniques. Among these methods, we found down-sampling to be our preferred approach as up-sampling can lead to the replication of existing observations or the introduction of unrealistic data points.
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+class_distribution <- table(airlines$DELAY)
+percentage_0 <- class_distribution[1] / sum(class_distribution) * 100
+percentage_1 <- class_distribution[2] / sum(class_distribution) * 100
+
+print(paste("Percentage of 0's:", percentage_0))
+print(paste("Percentage of 1's:", percentage_1))
+```
+
+## **7.2 Metrics**
+
+In our analysis, our primary objective is to accurately predict the number of flights that will experience delays, which we consider as the positive class. Therefore, our focus will be on evaluating the sensitivity or recall metric, which measures the proportion of correctly predicted positive instances.
+
+However, it's important to note that when computing confusion matrices in R, the sensitivity value is often labeled as specificity, which can lead to confusion. To avoid this confusion, we will interpret the metric labeled as specificity as the sensitivity or recall in the context of our analysis.
+
+Furthermore, since the distribution of delayed flights is imbalanced, with the majority of instances being non-delayed, we need to account for this imbalance. To address this, we will employ robust evaluation methods such as the F1-score and balanced accuracy.
+
+By emphasizing the correct prediction of positive instances (delayed flights), we aim to prioritize the accurate identification of delays while maintaining a good overall balanced accuracy, which takes into account both the sensitivity and specificity of the model.
+
+## **7.3 Methodology**
+
+For each model, we conducted a comparative analysis using Cross-Validation, Down-sampling and different data splitting techniques: fixed split, standard split, and rolling window cross-validation. These techniques enable us to partition the data set into training and testing subsets in distinct ways, allowing us to assess the model's performance under different scenarios.
+
+The fixed split technique ensures that the training data consists of observations with earlier dates, while the testing data comprises observations with later dates. This approach preserves the temporal order of the data in the split. By employing a fixed split, we create a training set that represents historical data and a testing set that simulates future, unseen data. This mimics the real-world scenario where we make predictions on future observations based on past information. Consequently, the model can learn and generalize from historical patterns, providing a more realistic evaluation of its performance on unseen data. In contrast, the standard split randomly assigns 80% of the data for training and 20% for testing, without considering the temporal relationship between observations. This can lead to poorer predictions since the random shuffling of data disrupts the temporal patterns.
+
+Window cross-validation, on the other hand, involves iteratively training and testing the model using sliding windows of data. The window size determines the number of consecutive observations used for training, and the window step determines the interval between each window. This technique considers the temporal aspect by progressively moving the window through the data, ensuring that each observation is used for both training and testing. It provides a comprehensive evaluation of the model's performance over time, capturing any changes or patterns in the data. For each of our model, we have tweaked the window size and step in order to optimize the results.
+
+By comparing the results obtained from these different splitting techniques, we gain insights into how the model performs under various data partitioning strategies and can make informed decisions regarding the suitability of each approach for our specific modeling task.
+
+::: callout-note
+## Note
+
+Due to computational limitations, we have been constrained to perform a maximum of five-fold cross-validation.
+:::
+
+## **7.4 Splitting**
+
+We start by defining our default settings for partitioning the data into training and testing sets. In order to realistically simulate the scenario of a departure delay of a given day, we have decided to remove some variables to reduce bias. These variables are not known before the flight departure. For example, the real *DEP_TIME* and *ARR_TIME.* We only keep objective variables which are pre-defined (such as scheduled departure time).
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+###########  FIXED SPLIT ##############
+# First step is to arrange the data from earliest to latest date
+airlines <-  airlines %>% arrange(FL_DATE)
+# Split_date using 80% for training and 20% testing; 80% of 12 is 9.6 so training from January until 18th of September. Testing between 19th of September until end of December. 
+split_date <- as.Date("2018-09-18")
+# Split the data
+df_tr_date <- airlines[airlines$FL_DATE < split_date, ]
+df_tr_date <- dplyr::select(df_tr_date, -DEP_TIME, -DEP_DELAY, -TAXI_IN, -TAXI_OUT, -WHEELS_OFF, -WHEELS_ON, -ARR_TIME, -ARR_DELAY, -ACTUAL_ELAPSED_TIME, -AIR_TIME, -NAS_DELAY, -WEATHER_DELAY,-CARRIER_DELAY,-SECURITY_DELAY, -LATE_AIRCRAFT_DELAY)
+df_te_date <- airlines[airlines$FL_DATE >= split_date, ]
+df_te_date <- dplyr::select(df_te_date, -DEP_TIME, -DEP_DELAY, -TAXI_IN, -TAXI_OUT, -WHEELS_OFF, -WHEELS_ON, -ARR_TIME, -ARR_DELAY, -ACTUAL_ELAPSED_TIME, -AIR_TIME, -NAS_DELAY, -WEATHER_DELAY,-CARRIER_DELAY,-SECURITY_DELAY, -LATE_AIRCRAFT_DELAY)
+
+########### RANDOM SPLIT ##############
+set.seed(123)
+trainIndex <- createDataPartition(airlines$DELAY, p = 0.8, list = FALSE)
+df_tr <- airlines[trainIndex, ]
+df_tr <- dplyr::select(df_tr, -DEP_TIME, -DEP_DELAY, -TAXI_IN, -TAXI_OUT, -WHEELS_OFF, -WHEELS_ON, -ARR_TIME, -ARR_DELAY, -ACTUAL_ELAPSED_TIME, -AIR_TIME, -NAS_DELAY, -WEATHER_DELAY,-CARRIER_DELAY,-SECURITY_DELAY, -LATE_AIRCRAFT_DELAY)
+
+df_te <- airlines[-trainIndex, ]
+df_te <- dplyr::select(df_te, -DEP_TIME, -DEP_DELAY, -TAXI_IN, -TAXI_OUT, -WHEELS_OFF, -WHEELS_ON, -ARR_TIME, -ARR_DELAY, -ACTUAL_ELAPSED_TIME, -AIR_TIME, -NAS_DELAY, -WEATHER_DELAY,-CARRIER_DELAY,-SECURITY_DELAY, -LATE_AIRCRAFT_DELAY)
+
+########### WINDOW CROSS-VALIDATION ##############
+
+# Best hyperparameters: 
+# Define the window size and step
+window_size <- 1000  # Set the window size
+window_step <- 500  # Set the window step
+```
+
+## **7.5 Unsupervised**
+
+### Principal Component Analysis
+
+We need to manipulate date format to be able to use with PCA. Therefore, we extract and month and day components of *FL_DATE*.
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+airlines2 <- airlines 
+# Change the FL_DATE variable directly
+airlines2$FL_DATE <- ymd(airlines2$FL_DATE)
+
+# Extract month and day from FL_DATE
+airlines2$Month <- month(airlines2$FL_DATE)
+airlines2$Day <- day(airlines2$FL_DATE)
+```
+
+Now, we are going to create a new data set which will contain the newly transformed variables, and we will apply one-hot encoding to each of them to have our data ready for our machine learning models.
+
+```{r,warning=FALSE,  echo = TRUE}
+# Select the categorical variables to encode
+cat_vars <- c("OP_CARRIER","ORIGIN","DEST")
+
+# Perform one-hot encoding for each variable using lapply() and model.matrix()
+encoded_vars <- lapply(airlines2[cat_vars], function(x) model.matrix(~x-1, data = airlines2))
+
+# Rename the encoded columns with more informative names
+for (i in seq_along(cat_vars)) {
+  var_name <- cat_vars[i]
+  var_levels <- levels(airlines2[[var_name]])
+  col_names <- paste0(var_name, "_", var_levels)
+  colnames(encoded_vars[[i]]) <- col_names
+}
+
+# Combine the encoded variables into a single data frame using cbind()
+airlines2 <- cbind(airlines, do.call(cbind, encoded_vars))
+
+# Remove the original columns
+airlines2 <- airlines2 %>% dplyr::select(-c("OP_CARRIER","ORIGIN","DEST"))
+
+# Create a table for head(bank)
+table_head <- kable(head(airlines2), format = "html", row.names = FALSE) %>%
+  kable_styling(full_width = FALSE, html_font = "Arial")
+
+# Print the table
+table_head
+
+# removing FL_Date
+airlines2 <- dplyr::select(airlines2, -FL_DATE)
+
+# Convert Delay to numerical
+airlines2$DELAY <- as.numeric(airlines2$DELAY)
+```
+
+We fit our PCA model and plot the first 2 dimensions. At the same time, we can visualize the individual components of these dimensions.
+
+```{r,warning=FALSE,  echo = TRUE}
+# Set the seed for reproducibility
+set.seed(123)
+
+# Perform PCA
+airlines_pca <- PCA(airlines2[,], ncp = 11 , graph = FALSE)
+
+# Visualize the variance explained
+plot_var <- fviz_pca_var(airlines_pca)
+plot_var <- ggplotly(plot_var) %>%
+  layout(width = 800, height = 600)
+
+# Visualize the PCA biplot
+plot_biplot <- fviz_pca_biplot(airlines_pca)
+plot_biplot <- ggplotly(plot_biplot) %>%
+  layout(width = 800, height = 600)
+
+# Arrange the two plots side by side
+subplot(plot_var, plot_biplot, nrows = 1)
+
+# Visualize the contributions to the first principal component
+plot_contrib1 <- fviz_contrib(airlines_pca, choice = "var", axes = 1)
+plot_contrib1 <- ggplotly(plot_contrib1) %>%
+  layout(width = 800, height = 600)
+
+# Visualize the contributions to the second principal component
+plot_contrib2 <- fviz_contrib(airlines_pca, choice = "var", axes = 2)
+plot_contrib2 <- ggplotly(plot_contrib2) %>%
+  layout(width = 800, height = 600)
+
+# Arrange the two plots side by side
+subplot(plot_contrib1, plot_contrib2, nrows = 1)
+
+# Visualize the eigenvalues
+plot_eig <- fviz_eig(airlines_pca, addlabels = TRUE, ncp = 30)
+plot_eig <- ggplotly(plot_eig) %>%
+  layout(width = 800, height = 600)
+
+# Display the interactive plots
+subplot(plot_eig)
+```
+
+As we can see, the two most important dimensions, dimension 1 and dimension 2, explain a relatively low variance in our dataset, with 5.5% and 4.5% respectively. Some of the variables strongly associated with dimension 1 include *DISTANCE, AIR_TIME*, and *CRS_ELAPSED_TIME*. Similarly, dimension 2 is influenced by variables such as *WHEELS_OFF*, *DEP_TIME*, and *CRS_DEP_TIME*. While these variables seem to be related within their respective dimensions, it is challenging to conclude that they are individually relevant for predicting delays in our data set.
+
+## Supervised
+
+### RandomForest
+
+In `randomForest`, the variable importance is typically calculated based on the mean decrease in Gini index, as it tends to be more robust and interpretable than Mean Decrease Accuracy. `randomForest` function cannot handle a categorical predictor variable in a data set that has more than 53 categories. Using the `sapply` function we check that all the variables have less than or equal to 53 unique values. Due to computational limitations, we were unable to apply cross-validation in our analysis. The dataset used for training contains over 8000 observations, which makes the cross-validation method computationally expensive to implement along the random forest.
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+########### 1. FIXED SPLIT: rf_model ##############
+# Check that we have less or equal 53 unique values 
+sapply(df_tr_date, function(x) length(unique(x))) 
+# Use randomForest model  
+set.seed(123)
+rf_model <- randomForest(DELAY ~ ., data = df_tr_date, ntree = 10, mtry = 5, importance = TRUE, localImp = TRUE, replace = FALSE, type = "classification")
+plot(rf_model)
+predictions <- predict(rf_model, newdata = df_te_date)
+confusionMatrix(predictions, df_te_date$DELAY) 
+varImpPlot(rf_model, cex.axis = 0.8)
+head(round(importance(rf_model), 2))
+
+
+########### 2. RANDOM SPLIT: rf_model2 ##############
+set.seed(123)
+rf_model2 <- randomForest(DELAY ~ ., data = df_tr, ntree = 10, mtry = 5, importance = TRUE, localImp = TRUE, replace = FALSE, type = "classification")
+predictions2 <- predict(rf_model2, newdata = df_te)
+confusionMatrix(predictions2, df_te$DELAY) 
+varImpPlot(rf_model2, cex.axis = 0.8)
+head(round(importance(rf_model2), 2))
+
+########### 3. WINDOW CV: rf_model3 ##############
+### UNBALANCED ###
+# Initialize variables to store the best confusion matrix and its performance measure
+best_balanced_accuracy <- 0
+best_confusion_matrix <- NULL
+
+# Perform window cross-validation
+set.seed(123)
+for (i in seq(1, nrow(df_tr_date), by = window_step)) {
+  # Define the start and end indices of the current window
+  start_index <- i
+  end_index <- min(i + window_size - 1, nrow(df_tr_date))
+  
+  # Extract the current window of data
+  window_data <- df_tr_date[start_index:end_index, ]
+  
+  # Train the random forest model using the current window of data
+  model <- train(
+    DELAY ~ .,
+    data = window_data,
+    method = "rf",
+    trControl = trainControl(method = "none"),
+    tuneLength = 1
+  )
+  
+  # Make predictions on the testing set
+  predictions <- predict(model, newdata = df_te_date)
+  
+  # Compute the confusion matrix
+  confusion_matrix <- caret::confusionMatrix(predictions, df_te_date$DELAY)
+  
+    # Calculate balanced accuracy
+  balanced_accuracy <- mean(confusion_matrix$byClass[c("Sensitivity", "Specificity")])
+  
+  # Check if the current balanced accuracy is better
+  if (balanced_accuracy > best_balanced_accuracy) {
+    best_confusion_matrix <- confusion_matrix
+    best_balanced_accuracy <- balanced_accuracy
+  }
+}
+
+# Print the best confusion matrix and balanced accuracy
+cat("Best Confusion Matrix without balancing:\n")
+print(best_confusion_matrix)
+cat("Best Balanced Accuracy:", best_balanced_accuracy, "\n") 
+
+### BALANCED ### 
+# Initialize variables to store the best confusion matrix and its performance measure
+best_balanced_accuracy <- 0
+best_confusion_matrix <- NULL
+
+# Perform window cross-validation
+set.seed(123)
+for (i in seq(1, nrow(df_tr_date), by = window_step)) {
+  # Define the start and end indices of the current window
+  start_index <- i
+  end_index <- min(i + window_size - 1, nrow(df_tr_date))
+  
+  # Extract the current window of data
+  window_data <- df_tr_date[start_index:end_index, ]
+  
+  # Perform down sampling on the current window of data
+  downsampled_data <- downSample(x = window_data[, -which(names(window_data) == "DELAY")], y = window_data$DELAY)
+  # Replace the name "Class" with "DELAY" in the downsampled data
+  names(downsampled_data)[names(downsampled_data) == "Class"] <- "DELAY"
+
+  
+  # Train the random forest model using the downsampled data
+  model <- train(
+    DELAY ~ .,
+    data = downsampled_data,
+    method = "rf",
+    trControl = trainControl(method = "none"),
+    tuneLength = 1
+  )
+  
+  # Make predictions on the testing set
+  predictions <- predict(model, newdata = df_te_date)
+  
+  # Compute the confusion matrix
+  confusion_matrix <- caret::confusionMatrix(predictions, df_te_date$DELAY)
+  
+  # Calculate balanced accuracy
+  balanced_accuracy <- mean(confusion_matrix$byClass[c("Sensitivity", "Specificity")])
+  
+  # Check if the current balanced accuracy is better
+  if (balanced_accuracy > best_balanced_accuracy) {
+    best_confusion_matrix <- confusion_matrix
+    best_balanced_accuracy <- balanced_accuracy
+  }
+}
+
+# Print the best confusion matrix and balanced accuracy
+cat("Best Confusion Matrix with balanced data:\n")
+print(best_confusion_matrix)
+cat("Best Balanced Accuracy:", best_balanced_accuracy, "\n")
+
+
+
+
+
+```
+
+|                                        | Sensitivity | Specificity | F1-Score  | Balanced Accuracy |
+|---------------|---------------|---------------|---------------|---------------|
+| Fixed Split - Unbalanced               | 17.3%       | 91.7%       | 22.0%     | 54.5%             |
+| Random Split - Unbalanced              | 17.4%       | 90.2%       | 18.6%     | 53.8%             |
+| Window CV (fixed split) - Unbalanced   | 22.7%       | 87.0%       | 21.7%     | 54.9%             |
+| **Window CV (fixed split) - Balanced** | **62.7%**   | **55.2%**   | **33.6%** | **58.9%**         |
+
+In order to determine if a flight is going to be delayed upon departure by 15 minutes or more, the most important variables are: *Flight date, Scheduled Arrival, Departure Time and Destination.*
+
+The most optimal model uses the window cross-validation split with downsampling. This makes sense as with this technique captures the hidden patterns in the data by taking into account temporality.
+
+::: callout-tip
+## Fact
+
+The Random Forest model that performs better is the window cross-validation when delay is balanced, with a sensitivity of **62.7%** and balanced accuracy of **58.9%.**
+:::
+
+## Logistic regression
+
+This is a popular and intuitive model as it computes a probability for each observation to predict which class it should belong to.
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+########### 1. FIXED SPLIT ##############
+set.seed(123)
+log_reg_model1 <- train(
+  DELAY ~ .,
+  data = df_tr_date,
+  method = "glm",
+  family = "binomial",
+  trControl = trainControl(method = "cv", number = 10))
+log_reg_model1balanced <- train(
+  DELAY ~ .,
+  data = df_tr_date,
+  method = "glm",
+  family = "binomial",
+  trControl = trainControl(method = "cv", number = 10, sampling = "down"))
+summary(log_reg_model1)
+summary(log_reg_model1balanced)
+predictions1 <- predict(log_reg_model1, newdata = df_te_date)
+predictions1balanced <- predict(log_reg_model1balanced, newdata = df_te_date)
+
+confusionMatrix(predictions1, df_te_date$DELAY) 
+confusionMatrix(predictions1balanced, df_te_date$DELAY) 
+
+########### 2. SPLIT NORMAL: log_reg_model2 ##############
+set.seed(123)
+log_reg_model2 <- train(
+  DELAY ~ .,
+  data = df_tr,
+  method = "glm",
+  family = "binomial",
+  trControl = trainControl(method = "cv", number = 10))
+set.seed(123)
+log_reg_model2balanced <- train(
+  DELAY ~ .,
+  data = df_tr,
+  method = "glm",
+  family = "binomial",
+  trControl = trainControl(method = "cv", number = 10, sampling = "down"))
+summary(log_reg_model2)
+summary(log_reg_model2balanced)
+predictions2 <- predict(log_reg_model2, newdata = df_te)
+predictions2balanced <- predict(log_reg_model2balanced, newdata = df_te)
+confusionMatrix(predictions2, df_te$DELAY)
+confusionMatrix(predictions2balanced, df_te$DELAY) 
+
+
+########### 3. WINDOW CV: log_reg_model3: window uses fixed data split that takes into account temporality ##############
+### UNBALANCED ###
+# Define the window size and step
+window_size <- 2000  # Set the window size
+window_step <- 1000  # Set the window step
+
+best_balanced_accuracy <- 0
+best_confusion_matrix <- NULL
+set.seed(123)
+# Perform window cross-validation
+for (i in seq(1, nrow(df_tr_date), by = window_step)) {
+  # Define the start and end indices of the current window
+  start_index <- i
+  end_index <- min(i + window_size - 1, nrow(df_tr_date))
+  
+  # Extract the current window of data
+  window_data <- df_tr_date[start_index:end_index, ]
+  
+  # Train the logistic regression model using the current window of data
+  model <- train(
+    DELAY ~ .,
+    data = window_data,
+    method = "glm",
+    family = "binomial"
+  )
+  
+  # Make predictions on the testing set
+  predictions <- predict(model, newdata = df_te_date)
+  
+  # Compute the confusion matrix
+  confusion_matrix <- caret::confusionMatrix(predictions, df_te_date$DELAY)
+  
+  # Calculate balanced accuracy
+  balanced_accuracy <- mean(confusion_matrix$byClass[c("Sensitivity", "Specificity")])
+  
+  # Check if the current balanced accuracy is better
+  if (balanced_accuracy > best_balanced_accuracy) {
+    best_confusion_matrix <- confusion_matrix
+    best_balanced_accuracy <- balanced_accuracy
+  }
+}
+
+# Print the best confusion matrix and balanced accuracy
+cat("Best Confusion Matrix without balancing:\n")
+print(best_confusion_matrix)
+cat("Best Balanced Accuracy:", best_balanced_accuracy, "\n")
+
+
+### BALANCED ###
+best_balanced_accuracy <- 0
+best_confusion_matrix <- NULL
+set.seed(123)
+# Perform window cross-validation
+for (i in seq(1, nrow(df_tr_date), by = window_step)) {
+  # Define the start and end indices of the current window
+  start_index <- i
+  end_index <- min(i + window_size - 1, nrow(df_tr_date))
+  
+  # Extract the current window of data
+  window_data <- df_tr_date[start_index:end_index, ]
+  
+  # Perform downsampling on the current window of data
+  downsampled_data <- caret::downSample(x = window_data[, -which(names(window_data) == "DELAY")], y = window_data$DELAY)
+  # Replace the name "Class" with "DELAY" in the downsampled data
+  names(downsampled_data)[names(downsampled_data) == "Class"] <- "DELAY"
+
+  # Train the logistic regression model using the downsampled data
+  model <- train(
+    DELAY ~ .,
+    data = downsampled_data,
+    method = "glm",
+    family = "binomial"
+  )
+  
+  # Make predictions on the testing set
+  predictions <- predict(model, newdata = df_te_date)
+  
+  # Compute the confusion matrix
+  confusion_matrix <- caret::confusionMatrix(predictions, df_te_date$DELAY)
+  
+  # Calculate balanced accuracy
+  balanced_accuracy <- mean(confusion_matrix$byClass[c("Sensitivity", "Specificity")])
+  
+  # Check if the current balanced accuracy is better
+  if (balanced_accuracy > best_balanced_accuracy) {
+    best_confusion_matrix <- confusion_matrix
+    best_balanced_accuracy <- balanced_accuracy
+  }
+}
+
+# Print the best confusion matrix and balanced accuracy
+cat("Best Confusion Matrix with balanced data:\n")
+print(best_confusion_matrix)
+cat("Best Balanced Accuracy:", best_balanced_accuracy, "\n")   
+
+```
+
+|                                      | Sensitivity | Specificity | F1-Score  | Balanced Accuracy |
+|---------------|---------------|---------------|---------------|---------------|
+| Fixed Split - Unbalanced             | 4.3%        | 98.3%       | 6.5%      | 51.3%             |
+| Fixed Split - Balanced               | 71.9%       | 43.5%       | 32.6%     | 57.7%             |
+| Random Split - Unbalanced            | 0.4%        | 99.8%       | 2.3%      | 50.1%             |
+| **Random Split - Balanced**          | **61.4%**   | **58.5%**   | **35.7%** | **60.0%**         |
+| Window CV (fixed split) - Unbalanced | 64.9%       | 53.3%       | 33.5%     | 59.1%             |
+| Window CV (fixed split) - Balanced   | 86.7%       | 25.1%       | 31.9%     | 55.9%             |
+
+Although the window cross-validation (balanced) has a good sensitivity, we are not going to select this one as the specificity is too low, implying that of all the flights that are not delayed, it would only correctly identify as non-delay 25%.
+
+Surprisingly, the best model is the random split (balanced), even though it does not take temporality into account.
+
+::: callout-tip
+The Logistic Regression model that performs better is the random split when delay is balanced, with a sensitivity of **61.4%** and balanced accuracy of **60%.**
+:::
+
+## SVM
+
+### SVM method with the Radial Basis
+
+Support Vector Machines (SVM) with a radial kernel are advantageous for classifying flight delays due to their ability to capture non-linear relationships between input features and the target variable. It can handle high-dimensional spaces, outliers and imbalanced data effectively, leading to accurate and robust predictions. Standardizing the data before SVM is necessary to ensure that all features contribute equally to the decision-making process, as SVM is sensitive to the scale of the features and may prioritize features with larger magnitudes. As we have mostly categorical variables, we couldn't apply a standardization method. However, we tried using one-hot encoding to find an alternative solution. Unfortunately, the results were not congruent.
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+########### 1. FIXED SPLIT: svm_model ##############
+set.seed(123)
+svm_model <- train(
+  DELAY ~ .,
+  data = df_tr_date,
+  method = "svmRadial",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneLength = 10
+)
+set.seed(123)
+svm_model_balanced <- train(
+  DELAY ~ .,
+  data = df_tr_date,
+  method = "svmRadial",
+  trControl = trainControl(method = "cv", number = 5, sampling = "down"),
+  tuneLength = 10
+)
+# Print the model details
+print(svm_model)
+print(svm_model_balanced)
+
+# Predict using the trained SVM model
+predictions <- predict(svm_model, newdata = df_te_date)
+predictions2 <- predict(svm_model_balanced, newdata = df_te_date)
+
+# Print the confusion matrix (for classification) 
+confusionMatrix(predictions, df_te_date$DELAY)  
+confusionMatrix(predictions2, df_te_date$DELAY) 
+
+########### 2. RANDOM SPLIT: svm_model_2 ##############
+set.seed(123)
+svm_model_2 <- train(
+  DELAY ~ .,
+  data = df_tr,
+  method = "svmRadial",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneLength = 10
+)
+set.seed(123)
+svm_model_2_balanced <- train(
+  DELAY ~ .,
+  data = df_tr,
+  method = "svmRadial",
+  trControl = trainControl(method = "cv", number = 5, sampling = "down"),
+  tuneLength = 10
+)
+# Print the model details
+print(svm_model_2)
+print(svm_model_2_balanced)
+
+# Predict using the trained SVM model
+predictions <- predict(svm_model_2, newdata = df_te)
+predictions2 <- predict(svm_model_2_balanced, newdata = df_te)
+
+# Print the confusion matrix (for classification) 
+confusionMatrix(predictions, df_te$DELAY)  
+confusionMatrix(predictions2, df_te$DELAY) 
+
+########### 3. WINDOW CV: log_reg_model3: window uses fixed data split that takes into account temporality ##############
+### UNBALANCED ###
+best_balanced_accuracy <- 0
+best_confusion_matrix <- NULL
+# Perform window cross-validation
+set.seed(123)
+for (i in seq(1, nrow(df_tr_date), by = window_step)) {
+  # Define the start and end indices of the current window
+  start_index <- i
+  end_index <- min(i + window_size - 1, nrow(df_tr_date))
+  
+  # Extract the current window of data
+  window_data <- df_tr_date[start_index:end_index, ]
+  
+  # Train the logistic regression model using the current window of data
+  model <- train(
+    DELAY ~ .,
+    data = window_data,
+    method = "svmRadial",
+    family = "binomial"
+  )
+  
+  # Make predictions on the testing set
+  predictions <- predict(model, newdata = df_te_date)
+  
+  # Compute the confusion matrix
+  confusion_matrix <- caret::confusionMatrix(predictions, df_te_date$DELAY)
+  
+  # Calculate balanced accuracy
+  balanced_accuracy <- mean(confusion_matrix$byClass[c("Sensitivity", "Specificity")])
+  
+  # Check if the current balanced accuracy is better
+  if (balanced_accuracy > best_balanced_accuracy) {
+    best_confusion_matrix <- confusion_matrix
+    best_balanced_accuracy <- balanced_accuracy
+  }
+}
+
+# Print the best confusion matrix and balanced accuracy
+cat("Best Confusion Matrix without balancing:\n")
+print(best_confusion_matrix)
+cat("Best Balanced Accuracy:", best_balanced_accuracy, "\n")
+
+### BALANCED ###
+best_balanced_accuracy <- 0
+best_confusion_matrix <- NULL
+set.seed(123)
+# Perform window cross-validation
+for (i in seq(1, nrow(df_tr_date), by = window_step)) {
+  # Define the start and end indices of the current window
+  start_index <- i
+  end_index <- min(i + window_size - 1, nrow(df_tr_date))
+  
+  # Extract the current window of data
+  window_data <- df_tr_date[start_index:end_index, ]
+  
+  # Perform downsampling on the current window of data
+  downsampled_data <- caret::downSample(x = window_data[, -which(names(window_data) == "DELAY")], y = window_data$DELAY)
+  # Replace the name "Class" with "DELAY" in the downsampled data
+  names(downsampled_data)[names(downsampled_data) == "Class"] <- "DELAY"
+
+  # Train the logistic regression model using the downsampled data
+  model <- train(
+    DELAY ~ .,
+    data = downsampled_data,
+    method = "svmRadial",
+    family = "binomial"
+  )
+  
+  # Make predictions on the testing set
+  predictions <- predict(model, newdata = df_te_date)
+  
+  # Compute the confusion matrix
+  confusion_matrix <- caret::confusionMatrix(predictions, df_te_date$DELAY)
+  
+  # Calculate balanced accuracy
+  balanced_accuracy <- mean(confusion_matrix$byClass[c("Sensitivity", "Specificity")])
+  
+  # Check if the current balanced accuracy is better
+  if (balanced_accuracy > best_balanced_accuracy) {
+    best_confusion_matrix <- confusion_matrix
+    best_balanced_accuracy <- balanced_accuracy
+  }
+}
+
+# Print the best confusion matrix and balanced accuracy
+cat("Best Confusion Matrix with balanced data:\n")
+print(best_confusion_matrix)
+cat("Best Balanced Accuracy:", best_balanced_accuracy, "\n")
+
+```
+
+|                                      | Sensitivity | Specificity | F1-Score  | Balanced Accuracy |
+|---------------|---------------|---------------|---------------|---------------|
+| Fixed Split - Unbalanced             | 0.0%        | 100.0%      | NA        | 50%               |
+| Fixed Split - Balanced               | 66.7%       | 49.2%       | 32.6%     | 58%               |
+| Random Split - Unbalanced            | 0.0%        | 100.0%      | NA        | 50%               |
+| **Random Split - Balanced**          | **58.4%**   | **58.1%**   | **34.0%** | **58.3%**         |
+| Window CV (fixed split) - Unbalanced | 0.0%        | 100.0%      | NA        | 50%               |
+| Window CV (fixed split) - Balanced   | 53.4%       | 62.2%       | 32.0%     | 57.8%             |
+
+When the SVM model is trained on balanced data, where the number of instances in each class is roughly equal, it can effectively learn the decision boundaries and capture the patterns in both classes, resulting in good performance. However, when the data is imbalanced, with a significant disparity in the number of instances between the classes, the SVM can be biased towards the majority class, leading to lower performance on the minority class due to insufficient representation and imbalance-related optimization challenges. This explains the results obtained using unbalanced classes for the three splitting methods in the table above. Therefore, we focus our SVM analysis uniquely on balanced data, which gave us similar results.
+
+::: callout-tip
+## Fact
+The radial SVM model that performs better is the random split when delay is balanced, with a sensitivity of **58.4%** and balanced accuracy of **58.3%.**
+:::
+
+
+### SVM method with the Linear Basis
+
+Support Vector Machines (SVM) with a linear kernel are suitable for classifying flight delays due to their simplicity, computational efficiency, and interpretability. They work well when the data has a linearly separable structure, and they can provide a clear separation boundary, making them a reliable choice for classification tasks involving flight delay predictions.
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+########### 1. FIXED SPLIT: svm_model ##############
+set.seed(123)
+svm_model <- train(
+  DELAY ~ .,
+  data = df_tr_date,
+  method = "svmLinear",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneLength = 10
+)
+set.seed(123)
+svm_model_balanced <- train(
+  DELAY ~ .,
+  data = df_tr_date,
+  method = "svmLinear",
+  trControl = trainControl(method = "cv", number = 5, sampling = "down"),
+  tuneLength = 10
+)
+# Print the model details
+print(svm_model)
+print(svm_model_balanced)
+
+# Predict using the trained SVM model
+predictions <- predict(svm_model, newdata = df_te_date)
+predictions2 <- predict(svm_model_balanced, newdata = df_te_date)
+
+# Print the confusion matrix (for classification) 
+confusionMatrix(predictions, df_te_date$DELAY)  
+confusionMatrix(predictions2, df_te_date$DELAY) 
+
+########### 2. RANDOM SPLIT: svm_model_2 ##############
+set.seed(123)
+svm_model_2 <- train(
+  DELAY ~ .,
+  data = df_tr,
+  method = "svmLinear",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneLength = 10
+)
+
+set.seed(123)
+svm_model_2_balanced <- train(
+  DELAY ~ .,
+  data = df_tr,
+  method = "svmLinear",
+  trControl = trainControl(method = "cv", number = 5, sampling = "down"),
+  tuneLength = 10
+)
+# Print the model details
+print(svm_model_2)
+print(svm_model_2_balanced)
+
+# Predict using the trained SVM model
+predictions <- predict(svm_model_2, newdata = df_te)
+predictions2 <- predict(svm_model_2_balanced, newdata = df_te)
+
+# Print the confusion matrix (for classification) 
+confusionMatrix(predictions, df_te$DELAY)  
+confusionMatrix(predictions2, df_te$DELAY) 
+
+
+########### 3. WINDOW CV: log_reg_model3: window uses fixed data split that takes into account temporality ##############
+## UNBALANCED 
+best_balanced_accuracy <- 0
+best_confusion_matrix <- NULL
+
+# Perform window cross-validation
+set.seed(123)
+for (i in seq(1, nrow(df_tr_date), by = window_step)) {
+  # Define the start and end indices of the current window
+  start_index <- i
+  end_index <- min(i + window_size - 1, nrow(df_tr_date))
+  
+  # Extract the current window of data
+  window_data <- df_tr_date[start_index:end_index, ]
+  
+  # Train the SVM model with radial kernel using the current window of data
+  model <- train(
+    DELAY ~ .,
+    data = window_data,
+    method = "svmLinear",
+    trControl = trainControl(method = "none"),
+    tuneLength = 1
+  )
+  
+  # Make predictions on the testing set
+  predictions <- predict(model, newdata = df_te_date)
+  
+  # Compute the confusion matrix
+  confusion_matrix <- caret::confusionMatrix(predictions, df_te_date$DELAY)
+  
+  # Calculate balanced accuracy
+  balanced_accuracy <- mean(confusion_matrix$byClass[c("Sensitivity", "Specificity")])
+  
+  # Check if the current balanced accuracy is better
+  if (balanced_accuracy > best_balanced_accuracy) {
+    best_confusion_matrix <- confusion_matrix
+    best_balanced_accuracy <- balanced_accuracy
+  }
+}
+
+# Print the best confusion matrix and balanced accuracy
+cat("Best Confusion Matrix without balancing:\n")
+print(best_confusion_matrix)
+cat("Best Balanced Accuracy:", best_balanced_accuracy, "\n")
+
+
+### BALANCED ###
+# Initialize variables to store the best confusion matrix and its performance measure
+best_balanced_accuracy <- 0
+best_confusion_matrix <- NULL
+
+# Perform window cross-validation
+
+set.seed(123)
+for (i in seq(1, nrow(df_tr_date), by = window_step)) {
+  # Define the start and end indices of the current window
+  start_index <- i
+  end_index <- min(i + window_size - 1, nrow(df_tr_date))
+  
+  # Extract the current window of data
+  window_data <- df_tr_date[start_index:end_index, ]
+  
+  # Perform downsampling on the current window of data
+  downsampled_data <- downSample(x = window_data[, -which(names(window_data) == "DELAY")], y = window_data$DELAY)
+  # Replace the name "Class" with "DELAY" in the downsampled data
+  names(downsampled_data)[names(downsampled_data) == "Class"] <- "DELAY"
+  # Train the SVM model with radial kernel using the downsampled data
+  model <- train(
+    DELAY ~ .,
+    data = downsampled_data,
+    method = "svmLinear",
+    trControl = trainControl(method = "none"),
+    tuneLength = 1
+  )
+  
+  # Make predictions on the testing set
+  predictions <- predict(model, newdata = df_te_date)
+  
+  # Calculate balanced accuracy
+  balanced_accuracy <- mean(confusion_matrix$byClass[c("Sensitivity", "Specificity")])
+  
+  # Check if the current balanced accuracy is better
+  if (balanced_accuracy > best_balanced_accuracy) {
+    best_confusion_matrix <- confusion_matrix
+    best_balanced_accuracy <- balanced_accuracy
+  }
+}
+
+# Print the best confusion matrix and balanced accuracy
+cat("Best Confusion Matrix with balanced data:\n")
+print(best_confusion_matrix)
+cat("Best Balanced Accuracy:", best_balanced_accuracy, "\n")
+```
+
+|                                      | Sensitivity | Specificity | F1-Score  | Balanced Accuracy |
+|---------------|---------------|---------------|---------------|---------------|
+| Fixed Split - Unbalanced             | 55.1%       | 41.7%       | 25.5%     | 48.4%             |
+| Fixed Split - Balanced               | 58.4%       | 58.1%       | 34.0%     | 58.3%             |
+| Random Split - Unbalanced            | 0.0%        | 100.0%      | NA        | 50%               |
+| **Random Split - Balanced**          | **61.4%**   | **60.4%**   | **35.8%** | **60.9%**         |
+| Window CV (fixed split) - Unbalanced | 6.0%        | 97.1%       | 10.0%     | 51.5%             |
+| Window CV (fixed split) - Balanced   | 92.4%       | 9.7%        | 20.6%     | 51.0%             |
+
+As explained above, SVM does not work well with unbalanced data. Window CV achieves a very good sensitivity but unfortunately it's negative predictive power is poor.
+
+::: callout-tip
+## Fact
+
+The linear SVM model that performs better is the random split when delay is balanced, with a sensitivity of **61.4%** and balanced accuracy of **60.9%.**
+:::
+
+## K-Nearest Neighbor
+
+K-Nearest Neighbors (KNN) is a suitable choice for predicting flight delays using classification because it is a non-parametric algorithm that can capture complex relationships in the data without making strong assumptions about the underlying distribution. Additionally, KNN considers the proximity of similar instances, allowing it to identify patterns and classify flights based on the similarity of their features, which can be valuable in predicting delays. Tuning the hyper parameter k ( number of neighbors) is necessary to find the optimal value that balances the trade-off between bias and variance. When the data is imbalanced, using k=1 has lead us to better results due to increased flexibility, capturing localized patterns in the data and handling imbalanced data.
+
+Moreover, when data is balanced, we achieved optimal results with the default value (k=5).
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+########### 1. FIXED SPLIT: knn_model  ##############
+# KNN model
+set.seed(123)
+knn_model <- train(
+  DELAY ~ .,
+  data = df_tr_date,
+  method = "knn",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneLength = 10,
+  tuneGrid = data.frame(k = 1)
+)
+
+# Balanced KNN model
+set.seed(123)
+knn_model_balanced <- train(
+  DELAY ~ .,
+  data = df_tr_date,
+  method = "knn",
+  trControl = trainControl(method = "cv", number = 5, sampling = "down"),
+  tuneLength = 10,
+  tuneGrid = data.frame(k = 5)
+)
+
+# Print the model details
+print(knn_model)
+print(knn_model_balanced)
+
+# Predict using the trained KNN model
+predictions_knn <- predict(knn_model, newdata = df_te_date)
+predictions_knn_balanced <- predict(knn_model_balanced, newdata = df_te_date)
+
+# Print the confusion matrix (for classification)
+confusionMatrix(predictions_knn, df_te_date$DELAY)
+confusionMatrix(predictions_knn_balanced, df_te_date$DELAY)
+
+########### 2. RANDOM SPLIT: knn_model_2 ##############
+# KNN model
+set.seed(123)
+knn_model_2 <- train(
+  DELAY ~ .,
+  data = df_tr,
+  method = "knn",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneLength = 10,
+  tuneGrid = data.frame(k = 1)
+)
+
+# Balanced KNN model
+set.seed(123)
+knn_model_2_balanced <- train(
+  DELAY ~ .,
+  data = df_tr,
+  method = "knn",
+  trControl = trainControl(method = "cv", number = 5, sampling = "down"),
+  tuneLength = 10,
+  tuneGrid = data.frame(k = 5)
+)
+
+# Print the model details
+print(knn_model_2)
+print(knn_model_2_balanced)
+
+# Predict using the trained KNN model
+predictions_knn <- predict(knn_model_2, newdata = df_te)
+predictions_knn_balanced <- predict(knn_model_2_balanced, newdata = df_te)
+
+# Print the confusion matrix (for classification)
+confusionMatrix(predictions_knn, df_te$DELAY)
+confusionMatrix(predictions_knn_balanced, df_te$DELAY)
+
+###3. WINDOW CV: window uses fixed data split that takes into account temporality #####
+## UNBALANCED
+# Initialize variables to store the best confusion matrix and its performance measure
+best_balanced_accuracy <- 0
+best_confusion_matrix <- NULL
+
+# Perform window cross-validation
+set.seed(123)
+for (i in seq(1, nrow(df_tr_date), by = window_step)) {
+  # Define the start and end indices of the current window
+  start_index <- i
+  end_index <- min(i + window_size - 1, nrow(df_tr_date))
+  
+  # Extract the current window of data
+  window_data <- df_tr_date[start_index:end_index, ]
+  
+  # Train the KNN model using the current window of data
+  model <- train(
+    DELAY ~ .,
+    data = window_data,
+    method = "knn",
+    trControl = trainControl(method = "none"),
+    tuneLength = 1,
+    tuneGrid = data.frame(k = 1)
+  )
+  
+  # Make predictions on the testing set
+  predictions <- predict(model, newdata = df_te_date)
+  
+  # Compute the confusion matrix
+  confusion_matrix <- caret::confusionMatrix(predictions, df_te_date$DELAY)
+  
+  # Calculate balanced accuracy
+  balanced_accuracy <- mean(confusion_matrix$byClass[c("Sensitivity", "Specificity")])
+  
+  # Check if the current balanced accuracy is better
+  if (balanced_accuracy > best_balanced_accuracy) {
+    best_confusion_matrix <- confusion_matrix
+    best_balanced_accuracy <- balanced_accuracy
+  }
+}
+
+# Print the best confusion matrix and balanced accuracy
+cat("Best Confusion Matrix without balancing:\n")
+print(best_confusion_matrix)
+cat("Best Balanced Accuracy:", best_balanced_accuracy, "\n")
+
+### BALANCED ###
+# Initialize variables to store the best confusion matrix and its performance measure
+best_balanced_accuracy <- 0
+best_confusion_matrix <- NULL
+
+# Perform window cross-validation
+set.seed(123)
+for (i in seq(1, nrow(df_tr_date), by = window_step)) {
+  # Define the start and end indices of the current window
+  start_index <- i
+  end_index <- min(i + window_size - 1, nrow(df_tr_date))
+  
+  # Extract the current window of data
+  window_data <- df_tr_date[start_index:end_index, ]
+  
+  # Perform downsampling on the current window of data
+  downsampled_data <- downSample(x = window_data[, -which(names(window_data) == "DELAY")], y = window_data$DELAY)
+  # Replace the name "Class" with "DELAY" in the downsampled data
+  names(downsampled_data)[names(downsampled_data) == "Class"] <- "DELAY"
+  
+  # Train the KNN model using the downsampled data
+  model <- train(
+    DELAY ~ .,
+    data = downsampled_data,
+    method = "knn",
+    trControl = trainControl(method = "none"),
+    tuneLength = 1,
+    tuneGrid = data.frame(k = 5)
+  )
+  
+  # Make predictions on the testing set
+  predictions <- predict(model, newdata = df_te_date)
+  
+  # Compute the confusion matrix
+  confusion_matrix <- caret::confusionMatrix(predictions, df_te_date$DELAY)
+  
+  # Calculate balanced accuracy
+  balanced_accuracy <- mean(confusion_matrix$byClass[c("Sensitivity", "Specificity")])
+  
+  # Check if the current balanced accuracy is better
+  if (balanced_accuracy > best_balanced_accuracy) {
+    best_confusion_matrix <- confusion_matrix
+    best_balanced_accuracy <- balanced_accuracy
+  }
+}
+
+# Print the best confusion matrix and balanced accuracy
+cat("Best Confusion Matrix with balanced data:\n")
+print(best_confusion_matrix)
+cat("Best Balanced Accuracy:", best_balanced_accuracy, "\n")
+
+```
+
+|                                        | Sensitivity | Specificity | F1-Score  | Balanced Accuracy |
+|---------------|---------------|---------------|---------------|---------------|
+| Fixed Split - Unbalanced               | 26.2%       | 82.0%       | 24.7%     | 54.1%             |
+| Fixed Split - Balanced                 | 58.0%       | 54.4%       | 30.9%     | 56.2%             |
+| Random Split - Unbalanced              | 24.4%       | 84.2%       | 25.1%     | 54.3%             |
+| Random Split - Balanced                | 53.7%       | 54.2%       | 30.1%     | 53.9%             |
+| Window CV (fixed split) - Unbalanced   | 24.2%       | 83.9%       | 24.0%     | 54.1%             |
+| **Window CV (fixed split) - Balanced** | **55.6%**   | **57.1%**   | **30.9%** | **56.3%**         |
+
+Despite tuning the hyper parameter k in the KNN model to address class imbalance, we found that applying down-sampling with five nearest neighbors yielded more robust and reliable results.
+
+::: callout-tip
+## Fact
+
+The KNN model that performs better is the window cross-validation when delay is balanced, with a sensitivity of **55.6%** and balanced accuracy of **56.3%.**
+:::
+
+## Neural Network
+
+Neural networks can take many shapes. The core parameters we are going to tweak are the number of nodes, and the decay values. Using cross-validation, we will run multiple models and keep only the best one based on sensitivity. We start using imbalanced data.
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+num_folds <- 5  # Number of cross-validation folds
+control <- trainControl(method = "cv", number = num_folds)
+
+# Define grid of hyperparameter values
+node_grid <- c (2, 3, 4, 5)  # Set of number of nodes
+decay_grid <- c(0.15, 0.16, 0.17)  # Set of decay values
+
+# Create the tuning grid
+tuning_grid <- expand.grid(size = node_grid, decay = decay_grid)
+
+# Perform cross-validation and tune hyperparameters
+tuned_model <- train(DELAY ~ . , data = df_tr,
+                     method = "nnet",
+                     trControl = control,
+                     tuneGrid = tuning_grid,
+                     maxit = 100,
+                     verboseIter = FALSE)
+
+# Find the best hyperparameter values
+best_nodes <- tuned_model$bestTune$size
+best_decay <- tuned_model$bestTune$decay
+
+set.seed(123)
+# Train the final model using the best hyperparameter values on the entire training set
+final_model <- nnet(DELAY ~ ., data = df_tr, size = best_nodes, decay = best_decay, maxit = 150, trace = FALSE)
+
+# Predict on the testing set
+pred <- predict(final_model, newdata = df_te)
+
+predicted_classes <- ifelse(pred > 0.5, 1, 0)
+
+# Create a confusion matrix
+conf_mat <- table(Pred = pred, Obs = df_te$DELAY)
+
+actual_classes <- df_te$DELAY
+
+confusion_matrix <- table(predicted_classes, actual_classes)
+
+print(pred)
+print(confusion_matrix)
+```
+
+Our neural network model tend to overfit when we set the number of iterations upward of 200. Putting it too low gives us unreliable results as well. Therefore, we keep a value of 200 for this initial model. When we put a treshold at 0.5, our model predict everything at 0 (no delay). It makes sense since we have imbalance in our data. To find the best treshold, we can compute the ROC Curve, using the `pROC`package.
+
+### Roc Curve
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+set.seed(123)
+# Predict on the testing set
+pred <- predict(final_model, newdata = df_te)
+
+# Create a binary indicator for the actual classes
+actual_classes <- ifelse(df_te$DELAY == 1, "0", "1")
+
+# Compute the ROC curve
+roc_obj <- roc(actual_classes, pred)
+
+# Plot the ROC curve
+plot(roc_obj, main = "Receiver Operating Characteristic (ROC) Curve")
+```
+
+The ROC curve of our initial model is arced shaped. Meaning that at each step we want to improve the sensitivity, we diminish the specificity. Since we want to find a better sensitivity, we need to lower our threshold from 0.5, to 0.35.
+
+We start to fit a model using our random split.In our cross validation process, we chose to a node_grid with the values 2 to 5, and a decay_grid with 0.1, 0.01 and 0.001. The treshold is set to 0.35
+
+### Random Split: imbalanced and balanced
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+### UNBALANCED ###
+set.seed(123)
+
+# Predict on the testing set
+pred <- predict(final_model, newdata = df_te)
+
+predicted_classes <- ifelse(pred > 0.35, 1, 0)
+
+# Create a confusion matrix
+conf_mat <- table(Pred = pred, Obs = df_te$DELAY)
+
+actual_classes <- df_te$DELAY
+
+confusion_matrix <- table(predicted_classes, actual_classes)
+print(confusion_matrix)
+
+# Calculate specificity (true negative rate)
+sensitivity <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
+
+# Calculate sensitivity (true positive rate or recall)
+specificity <- confusion_matrix[1, 1] / sum(confusion_matrix[, 1])
+
+# Calculate balanced accuracy
+balanced_accuracy <- mean(sensitivity+specificity)
+
+# Print the model parameters
+cat("Number of nodes:", best_nodes, "\n")
+cat("Decay value:", best_decay, "\n")
+
+# Print the performance metrics
+cat("Sensitivity:", sensitivity, "\n")
+cat("Specificity:", specificity, "\n")
+cat("Balanced Accuracy:", balanced_accuracy, "\n")
+
+
+### BALANCED ### 
+
+set.seed(123)
+
+
+num_folds <- 5  # Number of cross-validation folds
+control <- trainControl(method = "cv", number = num_folds, sampling = "down")  # Cross-validation control with balanced training
+
+# Define grid of hyperparameter values
+node_grid <- c(2, 3, 4, 5)  # Set of number of nodes
+decay_grid <- c(0.15, 0.16, 0.17)  # Set of decay values
+
+# Create the tuning grid
+tuning_grid <- expand.grid(size = node_grid, decay = decay_grid)
+
+# Perform cross-validation and tune hyperparameters
+tuned_model <- train(DELAY ~ ., data = df_tr,
+                     method = "nnet",
+                     trControl = control,
+                     tuneGrid = tuning_grid,
+                     maxit = 100,
+                     verboseIter = FALSE)
+
+# Find the best hyperparameter values
+best_nodes2 <- tuned_model$bestTune$size
+best_decay2 <- tuned_model$bestTune$decay
+
+set.seed(123)
+# Train the final model using the best hyperparameter values on the entire training set
+final_model2 <- nnet(DELAY ~ ., data = df_tr, size = best_nodes2, decay = best_decay2, maxit = 150, trace = FALSE)
+
+# Predict on the testing set
+pred2 <- predict(final_model, newdata = df_te)
+
+predicted_classes2 <- ifelse(pred2 > 0.35, 1, 0)
+
+# Create a confusion matrix
+conf_mat2 <- table(Pred = pred2, Obs = df_te$DELAY)
+
+actual_classes2 <- df_te$DELAY
+
+confusion_matrix2 <- table(predicted_classes2, actual_classes2)
+print(confusion_matrix2)
+
+
+# Calculate specificity (true negative rate)
+sensitivity2 <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
+
+# Calculate sensitivity (true positive rate or recall)
+specificity2 <- confusion_matrix[1, 1] / sum(confusion_matrix[, 1])
+
+# Calculate balanced accuracy
+balanced_accuracy2 <- ((sensitivity2 + specificity2) / 2)
+
+# Print the model parameters
+cat("Number of nodes:", best_nodes2, "\n")
+cat("Decay value:", best_decay2, "\n")
+
+# Print the performance metrics
+cat("Sensitivity:", sensitivity2, "\n")
+cat("Specificity:", specificity2, "\n")
+cat("Balanced Accuracy:", balanced_accuracy2, "\n")
+```
+
+We get exactly the same results
+
+### Fixed Split: imbalanced and balanced
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+set.seed(123)
+
+### UNBALANCED ###
+num_folds <- 5  # Number of cross-validation folds
+control <- trainControl(method = "cv", number = num_folds)  # Cross-validation control with balanced training
+
+# Define grid of hyperparameter values
+node_grid <- c(2, 3, 4, 5)  # Set of number of nodes
+decay_grid <- c(0.15, 0.16, 0.17)  # Set of decay values
+
+# Create the tuning grid
+tuning_grid <- expand.grid(size = node_grid, decay = decay_grid)
+
+# Perform cross-validation and tune hyperparameters
+tuned_model <- train(DELAY ~ ., data = df_tr_date,
+                     method = "nnet",
+                     trControl = control,
+                     tuneGrid = tuning_grid,
+                     maxit = 100,
+                     verboseIter = FALSE)
+
+# Find the best hyperparameter values
+best_nodes <- tuned_model$bestTune$size
+best_decay <- tuned_model$bestTune$decay
+
+set.seed(123)
+# Train the final model using the best hyperparameter values on the entire training set
+final_model <- nnet(DELAY ~ ., data = df_tr_date, size = best_nodes, decay = best_decay, maxit = 150, trace = FALSE)
+ 
+# Predict on the testing set
+pred <- predict(final_model, newdata = df_te_date)
+
+predicted_classes <- ifelse(pred > 0.35, 1, 0)
+
+# Create a confusion matrix
+conf_mat <- table(Pred = pred, Obs = df_te_date$DELAY)
+
+actual_classes <- df_te_date$DELAY
+
+confusion_matrix <- table(predicted_classes, actual_classes)
+
+# Calculate specificity (true negative rate)
+sensitivity <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
+
+# Calculate sensitivity (true positive rate or recall)
+specificity <- confusion_matrix[1, 1] / sum(confusion_matrix[, 1])
+
+# Calculate balanced accuracy
+balanced_accuracy <- ((sensitivity + specificity) / 2)
+
+# Print the model parameters
+cat("Number of nodes:", best_nodes, "\n")
+cat("Decay value:", best_decay, "\n")
+
+# Print the performance metrics
+cat("Sensitivity:", sensitivity, "\n")
+cat("Specificity:", specificity, "\n")
+cat("Balanced Accuracy:", balanced_accuracy, "\n")
+
+### BALANCED ### 
+
+
+num_folds <- 5  # Number of cross-validation folds
+control <- trainControl(method = "cv", number = num_folds, sampling = "down")  # Cross-validation control with balanced training
+
+# Define grid of hyperparameter values
+node_grid <- c(2, 3, 4, 5)  # Set of number of nodes
+decay_grid <- c(0.15, 0.16, 0.17)  # Set of decay values
+
+# Create the tuning grid
+tuning_grid <- expand.grid(size = node_grid, decay = decay_grid)
+
+# Perform cross-validation and tune hyperparameters
+tuned_model <- train(DELAY ~ ., data = df_tr_date,
+                     method = "nnet",
+                     trControl = control,
+                     tuneGrid = tuning_grid,
+                     maxit = 100,
+                     verboseIter = FALSE)
+
+# Find the best hyperparameter values
+best_nodes2 <- tuned_model$bestTune$size
+best_decay2 <- tuned_model$bestTune$decay
+
+set.seed(123)
+# Train the final model using the best hyperparameter values on the entire training set
+final_model2 <- nnet(DELAY ~ ., data = df_tr_date, size = best_nodes2, decay = best_decay2, maxit = 150, trace = FALSE)
+
+# Predict on the testing set
+pred2 <- predict(final_model, newdata = df_te_date)
+
+predicted_classes2 <- ifelse(pred2 > 0.35, 1, 0)
+
+# Create a confusion matrix
+conf_mat2 <- table(Pred = pred2, Obs = df_te_date$DELAY)
+
+actual_classes2 <- df_te_date$DELAY
+
+confusion_matrix2 <- table(predicted_classes2, actual_classes2)
+print(confusion_matrix2)
+
+# Calculate specificity (true negative rate)
+sensitivity2 <- confusion_matrix2[2, 2] / sum(confusion_matrix2[2, ])
+
+# Calculate sensitivity (true positive rate or recall)
+specificity2 <- confusion_matrix2[1, 1] / sum(confusion_matrix2[, 1])
+
+# Calculate balanced accuracy
+balanced_accuracy2 <- ((sensitivity2 + specificity2) / 2)
+
+# Print the model parameters
+cat("Number of nodes:", best_nodes2, "\n")
+cat("Decay value:", best_decay2, "\n")
+
+# Print the performance metrics
+cat("Sensitivity:", sensitivity2, "\n")
+cat("Specificity:", specificity2, "\n")
+cat("Balanced Accuracy:", balanced_accuracy2, "\n")
+```
+
+### Window Cross-Validation (fixed split) and imbalanced
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+set.seed(123)
+
+best_balanced_accuracy <- 0
+best_confusion_matrix <- NULL
+
+for (i in seq(1, nrow(df_tr_date), by = window_step)) {
+  # Define the start and end indices of the current window
+  start_index <- i
+  end_index <- min(i + window_size - 1, nrow(df_tr_date))
+  
+  # Extract the current window of data
+  window_data <- df_tr_date[start_index:end_index, ]
+  
+  num_folds <- 5  # Number of cross-validation folds
+  control <- trainControl(method = "cv", number = num_folds, savePredictions = TRUE)  # Cross-validation control with saving predictions
+  
+  # Define grid of hyperparameter values
+  node_grid <- c(2, 3, 4, 5)  # Set of number of nodes
+  decay_grid <- c(0.15, 0.16, 0.17)  # Set of decay values
+  
+  # Create the tuning grid
+  tuning_grid <- expand.grid(size = node_grid, decay = decay_grid)
+  
+  # Perform cross-validation and tune hyperparameters
+  tuned_model <- train(DELAY ~ ., data = window_data,
+                       method = "nnet",
+                       trControl = control,
+                       tuneGrid = tuning_grid,
+                       maxit = 100 ,
+                       verboseIter = FALSE)
+  
+  # Get the predictions from the best model
+  best_predictions <- tuned_model$pred
+  
+  # Find the best hyperparameter values
+  best_nodes_date <- tuned_model$bestTune$size
+  best_decay_date <- tuned_model$bestTune$decay
+  
+  set.seed(123)
+  # Train the final model using the best hyperparameter values on the entire window
+  final_model_date <- nnet(DELAY ~ ., data = window_data, size = best_nodes_date, decay = best_decay_date, maxit = 150 , trace = FALSE)
+  
+  # Predict on the testing set
+  pred_date <- predict(final_model_date, newdata = df_te_date)
+  
+  # Create a confusion matrix
+  conf_mat <- table(Pred = pred, Obs = df_te_date$DELAY)
+  
+  predicted_classes <- ifelse(pred_date > 0.35, 1, 0)
+  
+  actual_classes <- df_te_date$DELAY
+  
+  confusion_matrix_date <- table(predicted_classes, actual_classes)
+  
+  # Calculate specificity (true negative rate)
+  sensitivity <- confusion_matrix_date[2, 2] / sum(confusion_matrix_date[2, ])
+
+  # Calculate sensitivity (true positive rate or recall)
+  specificity <- confusion_matrix_date[1, 1] / sum(confusion_matrix_date[, 1])
+
+  # Calculate balanced accuracy
+  balanced_accuracy <- ((sensitivity + specificity) / 2)
+
+  # Print the model parameters
+  cat("Number of nodes:", best_nodes, "\n")
+  cat("Decay value:", best_decay, "\n")
+
+  # Print the performance metrics
+  cat("Sensitivity:", sensitivity, "\n")
+  cat("Specificity:", specificity, "\n")
+  cat("Balanced Accuracy:", balanced_accuracy, "\n")
+  
+}
+
+```
+
+### Window Cross-Validation (fixed split) and balanced
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+set.seed(123)
+
+best_balanced_accuracy <- 0
+best_confusion_matrix <- NULL
+
+for (i in seq(1, nrow(df_tr_date), by = window_step)) {
+  # Define the start and end indices of the current window
+  start_index <- i
+  end_index <- min(i + window_size - 1, nrow(df_tr_date))
+  
+  # Extract the current window of data
+  window_data <- df_tr_date[start_index:end_index, ]
+  
+  num_folds <- 5  # Number of cross-validation folds
+  control <- trainControl(method = "cv", number = num_folds, savePredictions = TRUE, sampling = "down" )  # Cross-validation control with saving predictions
+  
+  # Define grid of hyperparameter values
+  node_grid <- c(2, 3, 4, 5)  # Set of number of nodes
+  decay_grid <- c(0.15, 0.16, 0.17)  # Set of decay values
+  
+  # Create the tuning grid
+  tuning_grid <- expand.grid(size = node_grid, decay = decay_grid)
+  
+  # Perform cross-validation and tune hyperparameters
+  tuned_model <- train(DELAY ~ ., data = window_data,
+                       method = "nnet",
+                       trControl = control,
+                       tuneGrid = tuning_grid,
+                       maxit = 100,
+                       verboseIter = FALSE)
+  
+  # Get the predictions from the best model
+  best_predictions <- tuned_model$pred
+  
+  # Find the best hyperparameter values
+  best_nodes_date <- tuned_model$bestTune$size
+  best_decay_date <- tuned_model$bestTune$decay
+  
+  set.seed(123)
+  # Train the final model using the best hyperparameter values on the entire window
+  final_model_date <- nnet(DELAY ~ ., data = window_data, size = best_nodes_date, decay = best_decay_date, maxit = 150, trace = FALSE)
+  
+  # Predict on the testing set
+  pred_date <- predict(final_model_date, newdata = df_te_date)
+  
+  # Create a confusion matrix
+  conf_mat <- table(Pred = pred, Obs = df_te_date$DELAY)
+  
+  predicted_classes <- ifelse(pred_date > 0.35, 1, 0)
+  
+  actual_classes <- df_te_date$DELAY
+  
+  confusion_matrix_date <- table(predicted_classes, actual_classes)
+  
+  # Calculate balanced accuracy
+  balanced_accuracy <- mean(conf_mat[c("Sensitivity", "Specificity")])
+  
+  # Print the model parameters
+  cat("Number of nodes:", best_nodes, "\n")
+  cat("Decay value:", best_decay, "\n")
+
+  # Print the performance metrics
+  cat("Sensitivity:", sensitivity, "\n")
+  cat("Specificity:", specificity, "\n")
+  cat("Balanced Accuracy:", balanced_accuracy, "\n")
+  
+}
+
+```
+
+|                                      | Sensitivity | Specificity | Balanced- Accuracy |
+|------------------|------------------|------------------|------------------|
+| Fixed Split - Unbalanced             | 29.5%       | 96.4%       | 62.9%              |
+| Fixed Split - Balanced               | 29.5%       | 96.4%       | 62.9%              |
+| Random Split - Unbalanced            | 39.7%       | 96.1%       | 67.9%              |
+| **Random Split - Balanced**          | **39.7%**   | **96.1%**   | **67.9%**          |
+| Window CV (fixed split) - Unbalanced | 28.1%       | 85%         | 56.5%              |
+| Window CV (fixed split) - Balanced   | 28.1%       | 85%         | 56.5%              |
+
+The identical predictions observed in both the balanced and unbalanced models across the three categories suggest that the class imbalance in our data has limited influence on the neural network's accuracy in predicting delays. This finding implies that the model's performance remains consistent regardless of the class distribution.
+
+Based on these results, we can conclude that the random split model, which does not involve balancing techniques, is the most suitable choice. Furthermore, the lack of significant differentiation between the two models indicates that temporal factors may not be crucial in determining the prediction performance in this context.
+
+::: callout-tip
+## Fact
+
+The NN model that performs better is random split, with a sensitivity of **39.7%** and balanced accuracy of **67.9%.**
+:::
+
+# 8 Best Model
+
+After conducting an extensive hyper-parameter tuning process and evaluating various classification models, we have determined that the Support Vector Machine (SVM) with a linear kernel performs the best in terms of sensitivity and balanced accuracy. The optimal model selection was based on utilizing the Random split technique and applying down-sampling.
+
+It is noteworthy that our initial expectation was that the best-performing model would incorporate temporal considerations, given the significant impact of seasonality. However, to our surprise, the SVM with a linear kernel, along with the chosen data splitting technique and down-sampling, outperformed other models in terms of sensitivity and balanced accuracy.
+
+We have created a baseline model in order to see how our top performing model compares to randomly attributed values of 1 and 0 for our delay variable.
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+set.seed(123)
+# Generate random predictions for baseline model
+random_predictions <- sample(c(0, 1), size = nrow(airlines), replace = TRUE)
+
+# Assign random predictions to Baseline_Prediction column
+airlines$Baseline_Prediction <- random_predictions
+
+# Create a confusion matrix
+conf_mat <- table(airlines$DELAY, airlines$Baseline_Prediction)
+
+# Calculate sensitivity (true positive rate or recall)
+sensitivity <- conf_mat[2, 2] / sum(conf_mat[2, ])
+
+# Calculate specificity (true negative rate)
+specificity <- conf_mat[1, 1] / sum(conf_mat[, 1])
+
+# Calculate balanced accuracy
+balanced_accuracy <- (sensitivity + specificity) / 2
+
+# Print the confusion matrix
+print(conf_mat)
+
+# Print the performance metrics
+cat("Sensitivity:", sensitivity, "\n")
+cat("Specificity:", specificity, "\n")
+cat("Balanced Accuracy:", balanced_accuracy, "\n")
+```
+
+As observed, a random model would have achieved higher specificity, but lower sensitivity compared to our best model. This outcome is expected due to the unbalanced nature of the data. Consequently, the balanced accuracy of our best model is less precise, indicating a trade-off between increasing sensitivity and maintaining overall balanced prediction.
+
+
+# 9 Regression
+
+As stated in the introduction, our main objective with the regression is to predict the interval in minutes, knowing that the flight departs late by at least 15 minutes (delay == 1).
+
+## SVM - Multi-classification
+
+In order to predict, in minutes, the flight delay upon departure, we are going to divide our *DEP_DELAY* variable into factors of intervals. As explained in the introduction, the United States Federal Aviation Administration (FAA) considers a flight to be delayed when it is 15 minutes later than its scheduled time. Therefore, as we know that the flight is delayed by 15 minutes or more, we start our intervals from 15 to 30 (level 1), 30 to 45 (level 2), 45 to 60 (level 3) and more than 60 (level 4). As we specifically want to predict delays (and not early departures), we are going to create a new data set *airlines* that filters all the flights that have departed earlier, as otherwise they would be labelled as NA. By filtering these flights, we only have 2263 flights. This makes sense as our exploratory data analysis inferred that 80% of the flights are not delayed upon departure.
+
+The radial kernel in SVM is selected for our analysis due to its capability to capture non-linear patterns and relationships within time series data. While it is commonly recommended to scale the data for optimal performance, we found that consistent results were not achieved in our specific case.
+
+::: callout-warning
+## 
+
+Unfortunately, the window cross-validation is too computationally expensive and we would need parallel computing to run it.
+:::
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+# Create the new variable DEP_DELAY2 with factor levels based on intervals (excluding negative values)
+airlines$DELAY3 <- cut(airlines$DEP_DELAY, breaks = c(15, 30, 45, 60, Inf), labels = c(1, 2, 3, 4), include.lowest = TRUE, right = FALSE)
+# Create a new data set airlines2 without missing values in DEP_DELAY2
+airlines3 <- airlines[complete.cases(airlines$DELAY3), ]
+#Split using the three techniques
+#######  Fixed split: svm_model ####### 
+airlines3 <-  airlines3 %>% arrange(FL_DATE)
+split_date <- as.Date("2018-09-18")
+df_tr_date3 <- airlines3[airlines3$FL_DATE < split_date, ]
+df_tr_date3 <- dplyr::select(df_tr_date3, -DEP_TIME, -DEP_DELAY, -TAXI_IN, -TAXI_OUT, -WHEELS_OFF, -WHEELS_ON, -ARR_TIME, -ARR_DELAY, -ACTUAL_ELAPSED_TIME, -AIR_TIME, -NAS_DELAY, -WEATHER_DELAY,-CARRIER_DELAY,-SECURITY_DELAY, -LATE_AIRCRAFT_DELAY)
+df_te_date3 <- airlines3[airlines3$FL_DATE >= split_date, ]
+df_te_date3 <- dplyr::select(df_te_date3, -DEP_TIME, -DEP_DELAY, -TAXI_IN, -TAXI_OUT, -WHEELS_OFF, -WHEELS_ON, -ARR_TIME, -ARR_DELAY, -ACTUAL_ELAPSED_TIME, -AIR_TIME, -NAS_DELAY, -WEATHER_DELAY,-CARRIER_DELAY,-SECURITY_DELAY, -LATE_AIRCRAFT_DELAY)
+set.seed(123)
+svm_model <- train(
+  DELAY3 ~ .,
+  data = df_tr_date3,
+  method = "svmRadial",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneLength = 10
+)
+set.seed(123)
+svm_model_balanced <- train(
+  DELAY3 ~ .,
+  data = df_tr_date3,
+  method = "svmRadial",
+  trControl = trainControl(method = "cv", number = 5, sampling = "down"),
+  tuneLength = 10
+)
+
+# Predict using the trained SVM model
+predictions <- predict(svm_model, newdata = df_te_date3)
+predictions2 <- predict(svm_model_balanced, newdata = df_te_date3)
+
+# Print the confusion matrix (for classification) 
+confusionMatrix(predictions, df_te_date3$DELAY3)  
+confusionMatrix(predictions2, df_te_date3$DELAY3) 
+
+#######  Random Split: svm_model2 ####### 
+set.seed(123)
+trainIndex3 <- createDataPartition(airlines3$DELAY3, p = 0.8, list = FALSE)
+df_tr3 <- airlines3[trainIndex3, ]
+df_tr3 <- dplyr::select(df_tr3, -DEP_TIME, -DEP_DELAY, -TAXI_IN, -TAXI_OUT, -WHEELS_OFF, -WHEELS_ON, -ARR_TIME, -ARR_DELAY, -ACTUAL_ELAPSED_TIME, -AIR_TIME, -NAS_DELAY, -WEATHER_DELAY,-CARRIER_DELAY,-SECURITY_DELAY, -LATE_AIRCRAFT_DELAY)
+
+df_te3 <- airlines3[-trainIndex3, ]
+df_te3 <- dplyr::select(df_te3, -DEP_TIME, -DEP_DELAY, -TAXI_IN, -TAXI_OUT, -WHEELS_OFF, -WHEELS_ON, -ARR_TIME, -ARR_DELAY, -ACTUAL_ELAPSED_TIME, -AIR_TIME, -NAS_DELAY, -WEATHER_DELAY,-CARRIER_DELAY,-SECURITY_DELAY, -LATE_AIRCRAFT_DELAY)
+set.seed(123)
+svm_model2 <- train(
+  DELAY3 ~ .,
+  data = df_tr3,
+  method = "svmRadial",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneLength = 10
+)
+set.seed(123)
+svm_model_balanced2 <- train(
+  DELAY3 ~ .,
+  data = df_tr3,
+  method = "svmRadial",
+  trControl = trainControl(method = "cv", number = 5, sampling = "down"),
+  tuneLength = 10
+)
+
+# Predict using the trained SVM model
+predictions <- predict(svm_model2, newdata = df_te3)
+predictions2 <- predict(svm_model_balanced2, newdata = df_te3)
+
+# Print the confusion matrix (for classification) 
+confusionMatrix(predictions, df_te3$DELAY3)  
+confusionMatrix(predictions2, df_te3$DELAY3) 
+
+
+```
+
+|                              | Accuracy  |
+|------------------------------|-----------|
+| **Fixed Split - Unbalanced** | **37.7%** |
+| Fixed Split - Balanced       | 23.7%     |
+| Random Split - Unbalanced    | 35.9%     |
+| Random Split - Balanced      | 21.7%     |
+
+::: callout-tip
+## Fact
+
+The SVM model that performs better for multi-classification is the fixed split when delay is imbalanced, with an accuracy of 37.7%.
+:::
+
+## Multiple Linear Regression
+
+Multiple linear regression is useful for predicting the delay in minutes for a given flight upon departure by considering multiple independent variables and quantitatively estimating the impact of these variables on the flight delay. We start by creating a new data set, *airlines4*, which will keep only the observations with a *DEP_DELAY* of 15 min or more. Then, we will apply the same date transformation as for our PCA analysis, to extract the day and month.
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+airlines4 <- airlines %>% filter(DEP_DELAY>=15)
+
+airlines4 <- dplyr::select(airlines4, -DEP_TIME, -TAXI_IN, -TAXI_OUT, -WHEELS_OFF, -WHEELS_ON, -ARR_TIME, -ARR_DELAY, -ACTUAL_ELAPSED_TIME, -AIR_TIME, -NAS_DELAY, -WEATHER_DELAY,-CARRIER_DELAY,-SECURITY_DELAY, -LATE_AIRCRAFT_DELAY, -DELAY)
+# Change the FL_DATE variable directly
+airlines4$FL_DATE <- ymd(airlines4$FL_DATE)
+
+# Extract month and day from FL_DATE
+airlines4$Month <- month(airlines4$FL_DATE)
+airlines4$Day <- day(airlines4$FL_DATE)
+
+# removing FL_Date
+airlines4 <- dplyr::select(airlines4, -FL_DATE)
+```
+
+Let's have a look at the relationship between our variable of interest, and our other features.
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+airlines4 %>% 
+  dplyr::select(DEP_DELAY, OP_CARRIER_FL_NUM, CRS_DEP_TIME, CRS_ARR_TIME, CRS_ELAPSED_TIME, DISTANCE, Month,Day) %>% 
+  ggpairs()
+```
+
+As seen on the correlation plot, there isn't any variable correlated to our target variable, *DEP_DELAY*.
+
+Next, we fit a linear regression on a predefined training set.
+
+```{r,results = 'hide',warning=FALSE,  echo = TRUE}
+set.seed(123)
+index <- sample(x=c(1,2), size=nrow(airlines4), replace=TRUE, prob=c(0.8,0.2)) 
+# Creating testing and training
+dat_tr_restate <- airlines4[index==1,]
+dat_te_restate <- airlines4[index==2,]
+
+# Fit linear model
+mod_lm <- lm(DEP_DELAY~CRS_DEP_TIME+
+               CRS_ARR_TIME+
+               CRS_ELAPSED_TIME+
+               DISTANCE+
+               Month+
+               Day, data=dat_tr_restate)
+
+
+mod_lm_pred <- predict(mod_lm, newdata=dat_te_restate)
+plot(dat_te_restate$DEP_DELAY ~ mod_lm_pred, xlab="Prediction", ylab="Observed Delay")
+abline(0,1) # line showing the obs -- pred agreement
+
+
+summary(mod_lm)
+```
+
+The summary of the regression analysis supports our initial assumption based on the correlation plot, indicating that none of the variables exhibit a distinct relationship with the target variable, *DEP_DELAY*. However, it is worth noting that the variable *Month* demonstrates statistical significance at a significance level of 5%, suggesting that it may have some influence on the departure delay.
+
+Our coefficient of determination ($R^{2}$) is low, below 1%. It is therefore difficult to conclude that our model is relevant for predicting delay.
+
+# Limitations
+
+The main limitation that we encountered during our analysis is the computational power, especially when working with models such as Random Forest. As we saw, this model can become a limitation when dealing with large data sets or when tuning the model's hyper parameters through techniques like cross-validation.
+
+We believe that adding more features, such as meteorological variables (temperature, humidity, wind, etc), would have enhanced our model's prediction ability. Indeed, after analyzing our variables, we were not able to have appropriate results.
+
+# Conclusion
+
+In conclusion, our analysis has shown an improvement in sensitivity compared to a random baseline model when predicting departure flight delays. However, further enhancements are required to achieve more accurate predictions. Nevertheless, we successfully identified the most influential variables in our analysis, which include Flight date, Scheduled Arrival, Departure Time, and Destination.
+
+Interestingly, the best-performing model did not explicitly incorporate temporal factors, despite our exploratory data analysis indicating the presence of seasonality effects.This is in line with our findings regarding the lack of importance of our variables.
+

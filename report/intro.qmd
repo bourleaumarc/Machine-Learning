@@ -1,0 +1,127 @@
+```{r, echo = FALSE, message = FALSE}
+source(here::here("scripts/setup.R"))
+```
+
+# **Introduction**
+
+## **Motivation**
+
+Air travel has become an integral part of modern life. In 2018, approximately 144 million people, which is nearly half of the American population, traveled on a plane and 15% of all domestic flights were delayed, according to data from the U.S. Department of Transportation. The motivation to build a Machine Learning model that best predicts departure delay is at high stakes for several reasons. Flight delays can cause inconvenience to passengers, result in missed connections, and even lead to financial losses for airlines. Our analysis is solely based on the year 2018 for American domestic flights, as it's the most recent data that we can work with. During our work, we seek to predict the departure delay (*DEP_DELAY*), which is the subtraction between planned departure time (*CRS_DEP_TIME*) and the actual arrival time (*DEP_TIME*). In other words, we seek to predict if a given flight is going to depart late from its origin. According to the [United States Federal Aviation Administration](https://en.wikipedia.org/wiki/United_States_Federal_Aviation_Administration "United States Federal Aviation Administration") (FAA), a flight is delayed when it is 15 minutes later than its scheduled time. Therefore, we will consider a flight to be delayed at departure when the delay is equal or bigger than fifteen minutes.
+
+Seasonality seems to be important when analyzing flight delays because the number of delays and their causes can vary depending on the time of year. Factors like weather conditions, holidays, and peak travel periods can all impact flight delays, making it important to account for seasonality in any analysis to gain a complete understanding of the data. Therefore, considering seasonality is crucial in analyzing flight delays as it allows for a comprehensive examination of the data by capturing the variations in delay occurrences and their underlying factors across different time periods
+
+## **Data description**
+
+We are using the data set called *Airline Delay and Cancellation Data*, which is publicly available on Kaggle \[<https://www.kaggle.com/datasets/yuanyuwendymu/airline-delay-and-cancellation-data-2009-2018>\]. It has been imported from the Bureau of Transportation Statistics.
+
+-   Description We have 28 variables. Below are each one of them with their name, description and type.
+
+-   FL_DATE: Date of the flight (character).
+
+-   OP_CARRIER: Airline identifier (character).
+
+-   OP_CARRIER_FL_NUM: Flight number (integer).
+
+-   ORIGIN: Starting Airport Code (character).
+
+-   DEST: Destination Airport Code (character).
+
+-   CRS_DEP_TIME: Planned Departure Time (integer).
+
+-   DEP_TIME: Actual Departure Time (numerical).
+
+-   DEP_DELAY: Total Delay on Departure in minutes (numerical).
+
+-   TAXI_OUT: The time duration elapsed between departure from the origin airport gate and wheels off (numerical).
+
+-   WHEELS_OFF: The time point that the aircraft's wheels leave the ground (numerical).
+
+-   WHEELS_ON: The time point that the aircraft's wheels touch on the ground (numerical).
+
+-   TAXI_IN: The time duration elapsed between wheels-on and gate arrival at the destination airport (numerical).
+
+-   CRS_ARR_TIME: Planned Arrival Time (integer).
+
+-   ARR_TIME: Actual Arrival Time (numerical).
+
+-   ARR_DELAY: Total Delay on Arrival in minutes (numerical).
+
+-   CANCELLED: Flight Cancelled; 1 = cancelled, 0 = otherwise (numerical).
+
+-   CANCELLATION_CODE: Reason for Cancellation of flight: A - Airline/Carrier; B - Weather; C - National Air System; D - Security (character).
+
+-   DIVERTED: Aircraft landed on airport that out of schedule (numerical).
+
+-   CRS_ELAPSED_TIME: Planned time amount needed for the flight trip (numerical).
+
+-   ACTUAL_ELAPSED_TIME: AIR_TIME+TAXI_IN+TAXI_OUT (numerical).
+
+-   AIR_TIME: The time duration between wheels_off and wheels_on time (numerical).
+
+-   DISTANCE: Distance between two airports (numerical).
+
+-   CARRIER_DELAY: Delay caused by the airline in minutes (numerical).
+
+-   WEATHER_DELAY: Delay caused by weather (numerical).
+
+-   NAS_DELAY: Delay caused by air system (numerical).
+
+-   SECURITY_DELAY: Delay caused by security (numerical).
+
+-   LATE_AIRCRAFT_DELAY: Delay caused by security (numerical).
+
+In order to address computational limitations, a subset of 12,000 observations was selected from a dataset comprising 7,213,446 flights. This subset was chosen to achieve a balanced representation of approximately one thousand flights per month. Subsequently, the subset was further filtered based on the top 10 airports with the highest number of departure flights, and a random selection of 50 destinations was made from the remaining flights.
+
+A new variable called *DELAY* is introduced for classification tasks. It is defined as follows: if the computed difference between the planned departure time and actual arrival time (*DEP_TIME* - *CRS_DEP_TIME*) exceeds 15 minutes, indicating a delay in arrival, the value of the *DELAY* variable is assigned as 1. Conversely, if the computed difference is 15 minutes or less, indicating no or minimal delay, the value of the *DELAY* variable is set to 0.
+
+```{r, message = FALSE, warning = FALSE, echo = TRUE}
+# Import the CSV file
+airlines <- read.csv(here("data", "2018.csv"))
+
+# Filter the original data with the Top 10 airports with highest departure flights
+airlines <- airlines %>%
+  filter(ORIGIN %in% c("ATL", "CLT", "DEN", "DFW", "LAS", "LAX", "LGA", "MSP", "ORD", "PHX"))
+
+# We select 50 destinations at random
+set.seed(123)
+selected_destinations <- airlines %>%
+  distinct(DEST) %>%
+  sample_n(min(50, n()))
+
+# Filter the original dataset with the destinations
+airlines <- airlines %>%
+  filter(DEST %in% selected_destinations$DEST)
+
+
+# Check the number of rows in the data frame
+total_rows <- nrow(airlines)
+
+# Set the desired number of random observations
+n <- 12000
+
+# Randomly select the indices of the observations
+set.seed(123)
+random_indices <- sample(1:total_rows, n)
+
+# Subset the dataframe using the random indices
+airlines <- airlines[random_indices, ]
+
+# For classification purposes, we add a binary variable called DELAY. 
+airlines$DELAY <- ifelse(airlines$DEP_DELAY > 15, 1, 0)
+airlines$DELAY <- as.factor(airlines$DELAY)
+
+```
+
+## **Related Work**
+
+Nowadays, the demand for airline transportation is increasing significantly. Analysis of flight delay, therefore, has become a popular research area for machine learning. The report undertaken by Yuemin Tang \[reference: <https://dl.acm.org/doi/fullHtml/10.1145/3497701.3497725>\] has presented valuable insights in this domain.
+
+## **Research questions**
+
+Our primary research objective revolves around the accurate prediction of flight departure delays using historical data from US flights in the year 2018. To accomplish this objective, we intend to employ the following classification models:
+
+-   [Supervised]{.underline}: **Logistic Regression**, **Random Forest, K-Nearest Neighbors, Neural Networks and Support Vector Machines.**
+
+-   [Unsupervised]{.underline}: **Principal Component Analysis**.\
+
+Secondly, given that a flight will be delayed on departure, we seek to quantify this delay, in minute intervals, using **Linear regression and Support Vector Machines** (multi-classification)**.**

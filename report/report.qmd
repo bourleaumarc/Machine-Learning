@@ -1,0 +1,21 @@
+---
+title: "Airflight Delay Prediction Using Machine Learning"
+author: 
+  - name: "Julian Changanaqui"
+    url: https://github.com/Jmat0
+  - name: "Marc Bourleau"
+    url: https://github.com/bourleaumarc
+format:
+  html:
+    toc: true
+    toc_float: true
+    toc_left: true
+    code-fold: true
+    code-summary: "Show the code"
+    theme:
+      light: minty
+      dark: darkly
+---
+
+```{r child = c(('intro.qmd'),('eda.qmd'),('data.qmd'),('modelling.qmd'))}
+```

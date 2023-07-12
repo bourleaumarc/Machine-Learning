@@ -1,0 +1,436 @@
+```{r, echo = FALSE, message = FALSE}
+source(here::here("scripts/setup.R"))
+```
+
+# **EDA**
+
+# **1 Distribution: histograms**
+
+As stated in the first section, we observe that *Arr_delay* and *Dep_delay* are right-skewed - implying that the majority of domestic flights in the US in 2018 departed/arrived earlier than scheduled.
+
+```{r,warning=FALSE,echo = TRUE}
+hist(airlines$DEP_DELAY, main = "Histogram of departure delay", xlab = "Departure delay")
+hist(airlines$ARR_DELAY, main = "Histogram of arrival delay", xlab = "Arrival delay")
+```
+
+# **2 Delayed flights**
+
+```{r,warning=FALSE,echo = TRUE, results='asis'}
+advance <- 0
+advance0_15 <- 0
+delay15_30 <- 0
+delay30_45 <- 0
+delay45_60 <- 0
+delay60_plus <- 0
+total <- 0
+
+for (i in airlines$ARR_DELAY) {
+  if (!is.na(i)) {
+    if (i < 0) {
+      advance <- advance + 1
+    } else if (i <= 15) {
+      advance0_15 <- advance0_15 + 1
+    } else if (i <= 30) {
+      delay15_30 <- delay15_30 + 1
+    } else if (i <= 45) {
+      delay30_45 <- delay30_45 + 1
+    } else if (i <= 60) {
+      delay45_60 <- delay45_60 + 1
+    } else {
+      delay60_plus <- delay60_plus + 1
+    }
+    total <- total + 1
+  }
+}
+
+# compute percentages
+pct_advance <- advance / total * 100
+pct_advance0_15 <- advance0_15 / total * 100
+pct_delay15_30 <- delay15_30 / total * 100
+pct_delay30_45 <- delay30_45 / total * 100
+pct_delay45_60 <- delay45_60 / total * 100
+pct_delay60_plus <- delay60_plus / total * 100
+
+tab <- matrix(c(pct_advance,pct_advance0_15 ,pct_delay15_30, pct_delay30_45, pct_delay45_60, pct_delay60_plus), ncol=6, byrow=TRUE)
+colnames(tab) <- c('Advance','Advance between 0 and 15 minutes','Delay between 15-30 minutes','Delay between 30-45 minutes','Delay between 45-60 minutes', 'Delay more than 60 minutes' )
+
+rownames(tab) <- "Percentage"
+
+tab <- as.table(tab)
+knitr::kable(tab)
+```
+
+::: callout-tip
+## Fact
+
+In 2018, only 20% of American domestic flights departed later than scheduled (late by more than 15 minutes)
+:::
+
+# **3 Seasonality?**
+
+## **3.1 Proportion of delayed, diverted and cancelled flights across seasons**
+
+Our first intuition when analysing seasonality is that it does not seem to exist a significant difference of departure delay across seasons. As we can see, the biggest difference across seasons is between Summer and Winter.
+
+```{r,warning=FALSE,echo = TRUE}
+ # Partition date into seasons (every 3 months)
+airlines$FL_DATE_NEW <- ymd(airlines$FL_DATE)
+airlines$season <- cut(month(airlines$FL_DATE_NEW), 
+                          breaks=c(0,3,6,9,12), 
+                          labels=c("Winter","Spring","Summer","Fall"))
+# Create a list to store the four pie charts
+pie_charts <- list()
+
+# Loop through the four seasons and create a pie chart for each
+# Loop through the four seasons and create a pie chart for each
+for (s in c("Winter", "Spring", "Summer", "Fall")) {
+  
+  # Filter the data for the current season
+  season_data <- airlines %>% filter(season == s)
+  
+  # Check if the filtered data frame is empty
+  if (nrow(season_data) == 0) {
+    # Skip to the next season if there are no flights in this season
+    next
+  }
+  
+  # Compute the counts for each flight status
+  delayed <- sum(season_data$ARR_DELAY > 0, na.rm = TRUE)
+  cancelled <- sum(season_data$CANCELLED == 1, na.rm = TRUE)
+  diverted <- sum(season_data$DIVERTED == 1, na.rm = TRUE)
+  not_delayed <- nrow(season_data) - delayed - cancelled - diverted
+  
+  # Create a data frame with the counts and labels
+  flight_status <- data.frame(
+    status = c("Delayed", "Cancelled", "Diverted", "Not Delayed"),
+    count = c(delayed, cancelled, diverted, not_delayed))
+  
+  # Compute the percentages
+  flight_status$percent <- flight_status$count / sum(flight_status$count) * 100
+  
+  # Create the pie chart
+  p <- ggplot(flight_status, aes(x = "", y = percent, fill = status)) +
+    geom_bar(stat = "identity", width = 1) +
+    geom_text(aes(label = paste0(round(percent), "%")),
+              position = position_stack(vjust = 0.5)) +
+    coord_polar("y", start = 0) +
+    theme_void() +
+    ggtitle(s)
+  
+  # Add the pie chart to the list
+  pie_charts[[s]] <- p
+}
+
+
+# Arrange the pie charts using grid.arrange
+grid.arrange(grobs = pie_charts, ncol = 2)
+
+
+# General pie chart  
+delayed <- sum(airlines$ARR_DELAY > 0, na.rm = TRUE)
+cancelled <- sum(airlines$CANCELLED == 1, na.rm = TRUE)
+diverted <- sum(airlines$DIVERTED == 1, na.rm = TRUE)
+not_delayed <- nrow(airlines) - delayed - cancelled - diverted
+
+# Create a data frame with the counts and labels
+flight_status <- data.frame(
+  status = c("Delayed", "Cancelled", "Diverted", "Not Delayed"),
+  count = c(delayed, cancelled, diverted, not_delayed)
+)
+
+# Compute the percentages
+flight_status$percent <- flight_status$count / sum(flight_status$count) * 100
+
+# Create the pie chart
+ggplot(flight_status, aes(x = "", y = percent, fill = status)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start=0) +
+  labs(title = "Flight Status", fill = "Status") +
+  theme(legend.position = "bottom") +
+  geom_text(aes(label = paste0(round(percent), "%")), position = position_stack(vjust = 0.5)) +
+  scale_fill_manual(values = c("#009E73", "#0072B2", "#D55E00", "#E69F00"))
+
+```
+
+::: callout-tip
+## Fact
+
+61% of flights are neither delayed, diverted or cancelled. 37% of flights are delayed. 2% of flights are cancelled. 0.28% are diverted.
+:::
+
+## **3.2 Number of flights**
+
+To investigate the presence of seasonality, we have created a variable called *Season* by partitioning the *FL_DATE_NEW* into 3-month intervals. The percentage change between consecutive seasons was computed by subtracting the current season's flight count from the previous season's flight count. However, the Winter season had a missing value due to the absence of a preceding season. Our analysis indicates that the number of flights fluctuates slightly across seasons, with the largest variation occurring between Winter and Summer, where the number of flights increased by 10%. This observation is consistent with the higher demand for flights during the summer vacation period. Further investigation is necessary to determine if seasonality is present in the data.
+
+```{r,warning=FALSE,echo = TRUE}
+# Compute the count of flights per season
+flights_count <- airlines %>%
+  group_by(season) %>%
+  summarise(count = n())
+
+# Compute the percentage increase in flights count between each season
+flights_count <- flights_count %>%
+  mutate(percent_increase = round((count - lag(count)) / lag(count) * 100, 2))
+
+# Create the bar plot with percentage increase
+ggplot(flights_count, aes(x = season, y = count, fill = season)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(percent_increase, "%"), y = count + 50), vjust = -0.5) +
+  labs(title = "Number of Flights per Season with Percentage Increase", 
+       x = "Season", y = "Number of Flights") +
+  scale_y_continuous(labels = scales::comma)
+# Compute the percentage of evolution between Winter and Summer using the values in flights_count
+cat("The percentage increase of flight numbers from Winter to Summer is", round((flights_count$count[3] - flights_count$count[1]) / flights_count$count[1] * 100, 2), "%")
+```
+
+::: callout-tip
+## Fact
+
+The percentage increase of flight numbers from Winter to Summer is around 8%
+:::
+
+## **3.3 Response variable**
+
+Based on the observed bar plot, it can be deduced that the average departure delay is the highest during the Summer season as compared to the other seasons. Further analysis revealed a considerable 20.1% increase in the average arrival delay between the Winder and Summer seasons. Such a substantial difference in delay values could potentially create bias in our analysis and consequently, it is imperative to acknowledge and consider the impact of seasonality in our data set.
+
+```{r,warning=FALSE,echo = TRUE}
+# Compute the average delay per season
+delay_avg <- airlines %>%
+  group_by(season) %>%
+  summarize(avg_delay = mean(as.numeric(DEP_DELAY), na.rm = TRUE))
+
+# Compute the percentage increase in average delay between each season
+delay_avg <- delay_avg %>%
+  mutate(percent_increase = round((avg_delay - lag(avg_delay)) / lag(avg_delay) * 100, 2))
+
+# Create the bar plot with percentage increase
+ggplot(delay_avg, aes(x = season, y = avg_delay, fill = season)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(percent_increase, "%"), y = avg_delay + 5), vjust = 0, size = 4) +
+  labs(title = "Average Departure Delay per Season with Percentage Increase", 
+       x = "Season", y = "Average Departure Delay") +
+  scale_y_continuous(labels = scales::comma)
+
+# Compute the percentage of evolution between Winter and Summer using the values in delay_avg 
+cat("The percentage increase of average delay from Winter to Summer is", round((delay_avg$avg_delay[3] - delay_avg$avg_delay[1]) / delay_avg$avg_delay[1] * 100, 2), "%")
+
+```
+
+::: callout-tip
+## Fact
+
+The percentage increase of average departed delay from Winter to Summer is of 20%
+:::
+
+Undoubtedly, seasonality is a significant factor that needs to be taken into consideration as there are distinct patterns between seasons, which have the potential to cause bias in our analysis. Particularly in December, there are notable variations in the average departure delay. Thus, if we intend to forecast a flight delay, the season in which the flight operates significantly impacts the anticipated delay.
+
+```{r,warning=FALSE,echo = TRUE}
+# Remove rows with NA values in ARR_DELAY column
+airlines_clean <- airlines[!is.na(airlines$ARR_DELAY),]
+
+# Convert ARR_DELAY column to numeric
+airlines_clean$ARR_DELAY <- as.numeric(airlines_clean$ARR_DELAY)
+
+# Aggregate by FL_DATE_NEW and calculate mean ARR_DELAY for each group
+airlines_avg <- aggregate(ARR_DELAY ~ FL_DATE_NEW, data = airlines_clean, FUN = mean)
+
+plot(airlines_avg$FL_DATE_NEW, airlines_avg$ARR_DELAY, type = "l", main = "Average Flight Delay per Day", xlab = "Time", ylab = "Average Delay (min)")
+
+
+```
+
+## **3.4 Total Delay Minutes by Delay Type across Seasons**
+
+In this section, we are going to investigate in depth the type of delay across seasons. As stated above, we observe that Summer has the highest number of delay types (larger number of delays in general). It's important to point out that this is not the count, but the total sum of total delays in minutes. We observe that *security_delay* varies vastly among seasons, while *carrier_delay* is the most stable of all.
+
+```{r,warning=FALSE,echo = TRUE}
+# Only take observations which have a delay
+delay_data <- airlines %>% 
+  dplyr::select(season, CARRIER_DELAY, WEATHER_DELAY, NAS_DELAY, SECURITY_DELAY, LATE_AIRCRAFT_DELAY) %>% 
+  pivot_longer(cols = CARRIER_DELAY:LATE_AIRCRAFT_DELAY, names_to = "delay_type", values_to = "delay_minutes") %>% 
+  filter(delay_type == "CARRIER_DELAY" & delay_minutes > 0 | delay_type == "WEATHER_DELAY" & delay_minutes > 0  | delay_type == "NAS_DELAY" & delay_minutes > 0  | delay_type == "SECURITY_DELAY" & delay_minutes > 0  | delay_type == "LATE_AIRCRAFT_DELAY" & delay_minutes > 0) %>% 
+  group_by(season, delay_type) %>% 
+  summarise(total_delay_minutes = sum(delay_minutes, na.rm = TRUE))
+p <- ggplotly(ggplot(delay_data, aes(x = season, y = total_delay_minutes, fill = delay_type)) +
+                geom_bar(stat = "identity") +
+                labs(x = "Season", y = "Total Delay Minutes", fill = "Delay Type") +
+                ggtitle("Total Delay Minutes by Delay Type and Season") +
+                facet_wrap(~ delay_type, scales = "free_y"))
+p <- ggplotly(p, width = 1500, height = 300)
+
+p
+```
+
+## **3.5 Cancellation and Diverted**
+
+Again, there is a huge variation between the seasons that confirms our seasonality assumption. Regarding cancellation, we observe that the higher variation across seasons is between Winter and Summer, with a decrease of more than 60%. This might occur because of harsher weather conditions during this period.
+
+```{r,warning=FALSE,echo = TRUE}
+cancelled_count <- airlines %>%
+  group_by(season) %>%
+  summarise(total_cancelled = sum(CANCELLED, na.rm = TRUE)) # only takes the values that are 1
+
+cancelled_count$percent_evolution <- c(NA, diff(cancelled_count$total_cancelled)/cancelled_count$total_cancelled[-length(cancelled_count$total_cancelled)]*100)
+
+ggplot(cancelled_count, aes(x=season, y=total_cancelled, fill=season)) + 
+  geom_bar(stat="identity") +
+  labs(title="Total Cancelled Flights by Season",
+       x="Season",
+       y="Total Cancelled Flights") +
+  geom_text(aes(label=paste(round(percent_evolution),"%")), vjust=-0.5, size=3.5) +
+  theme_minimal()
+# Compute the percentage of evolution between Winter and Fall using the values in cancelled_count
+cat("The percentage decrease of cancelled fights from Winter to Fall is", round((cancelled_count$total_cancelled[4] - cancelled_count$total_cancelled[1]) / cancelled_count$total_cancelled[1] * 100, 2), "%")
+
+
+```
+
+::: callout-tip
+## Fact
+
+The percentage decrease of cancelled fights from Winter to Fall is -61.8 %
+:::
+
+Regarding the diverted count, Summer has the highest number of planes diverted.
+
+```{r,warning=FALSE,echo = TRUE}
+diverted_count <- airlines %>% 
+  group_by(season) %>% 
+  summarise(total_diverted = sum(DIVERTED, na.rm = TRUE))
+diverted_count$percent_evolution <- c(NA, diff(diverted_count$total_diverted)/diverted_count$total_diverted[-length(diverted_count$total_diverted)]*100)
+ggplot(diverted_count, aes(x = season, y= total_diverted, fill = season))+
+  geom_bar(stat = "identity")+
+  labs(title="Total Diverted Flights by Season",
+       x="Season",
+       y="Total Diverted Flights") +
+  geom_text(aes(label=paste(round(percent_evolution),"%")), vjust=-0.5, size=3.5) +
+  theme_minimal()
+# Compute the percentage of evolution between Winter and Summer using the values in flights_count = 10%
+cat("The percentage increase of diverted flights from Winter to Summer is", round((diverted_count$total_diverted[3] - diverted_count$total_diverted[1]) / diverted_count$total_diverted[1] * 100, 2), "%")
+```
+
+::: callout-tip
+## Fact
+
+The percentage increase of diverted flights from Winter to Summer is of 40%.
+:::
+
+# **4 Exploring variables**
+
+## **4.1 Top 10 Airports with highest departures**
+
+```{r,warning=FALSE,echo = TRUE}
+origin_count <- airlines %>%
+  group_by(ORIGIN) %>%
+  summarise(count = n()) %>% 
+  top_n(10, count) %>% 
+  arrange(desc(count))
+ggplot(origin_count, aes(x = ORIGIN, y = count, fill = ORIGIN)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Top 10 Airports with highest departure flights", x = "Airport name", y = "Number of flights departing")
+```
+
+## **4.2 Top 10 airports with highest number of delayed flights**
+
+```{r,warning=FALSE,echo = TRUE}
+
+# Calculate the count of delayed flights for each destination airport
+arrival_count <- airlines %>%
+  filter(DEP_DELAY > 0) %>%
+  count(DEST, sort = TRUE) %>%
+  rename(total_delayed = n) %>%
+  top_n(10, total_delayed) %>%
+  arrange(desc(total_delayed))
+
+# Filter and summarize data for top 10 airports with highest total delayed flights
+arrival_data <- airlines %>%
+  filter(DEST %in% arrival_count$DEST) %>%
+  group_by(DEST) %>%
+  summarise(
+    avg_arr_delay = mean(as.numeric(ARR_DELAY), na.rm = TRUE),
+    total_cancelled = sum(CANCELLED, na.rm = TRUE),
+    total_diverted = sum(DIVERTED, na.rm = TRUE)
+  ) %>%
+  mutate(total_delayed = total_cancelled + total_diverted) %>%
+  top_n(10, total_delayed) %>%
+  arrange(desc(total_delayed))
+
+# Create first plot for average arrival delay
+plot1 <- plot_ly(arrival_data, x = ~DEST, y = ~avg_arr_delay, type = "scatter", mode = "markers",
+                 marker = list(color = "black", size = 10),
+                 name = "Average Departure Delay") %>%
+  layout(title = "Top 10 Airports with highest number of departure delayed flights",
+         xaxis = list(title = "Airport name"),
+         yaxis = list(title = "Average Arrival Delay"),
+         width = 800, height = 600)  # Adjust width and height as per your preference
+
+# Create second plot for sum of cancelled and diverted flights
+plot2 <- plot_ly(arrival_data, x = ~DEST, y = ~total_cancelled, type = "bar", 
+                 marker = list(color = "red"), name = "Cancelled Flights") %>%
+  add_trace(y = ~total_diverted, marker = list(color = "blue"), name = "Diverted Flights") %>%
+  layout(xaxis = list(title = "Airport name"), yaxis = list(title = "Number of Flights"),
+         barmode = "stack",
+         width = 800, height = 600)  # Adjust width and height as per your preference
+
+# Arrange the two plots side by side
+subplot(plot1, plot2, nrows = 1)
+
+```
+
+::: callout-tip 
+## Fact
+
+The airport with the highest number of delayed and cancelled flights on departure is the Newark Liberty International Airport (EWR, New York).
+:::
+
+
+## **4.3 Top 10 carriers with highest delays**
+
+```{r,warning=FALSE,  echo = TRUE}
+# Filter for flights with delay
+airlines_delay <- airlines %>% 
+  filter(!is.na(DEP_DELAY))
+
+# Calculate mean delay by carrier and sort in descending order
+carriers_delay <- airlines_delay %>% 
+  group_by(OP_CARRIER) %>% 
+  summarise(mean_delay = mean(DEP_DELAY, na.rm = TRUE)) %>% 
+  arrange(desc(mean_delay))
+
+# Get top 10 carriers with highest mean delay
+top_10_carriers <- head(carriers_delay$OP_CARRIER, n = 10)
+
+# Filter airlines_delay for top 10 carriers
+airlines_top <- airlines_delay %>% 
+  filter(OP_CARRIER %in% top_10_carriers)
+
+# Create plot with plotly
+plot_top_carriers <- plot_ly(data = airlines_top, x = ~OP_CARRIER, y = ~ARR_DELAY, type = "box",
+                             boxpoints = "all", jitter = 0.3, pointpos = -1.8,
+                             marker = list(color = "#FEE08B"),
+                             boxmean = TRUE) %>%
+  layout(title = "Top 10 Carriers with Highest Departure Delays",
+         xaxis = list(title = "Carrier", showgrid = FALSE, tickangle = 45),
+         yaxis = list(title = "Delay (minutes)", showgrid = TRUE),
+         plot_bgcolor = "rgba(0,0,0,0)", paper_bgcolor = "rgba(0,0,0,0)",
+         font = list(color = "#333333"),
+         margin = list(b = 0),
+         boxmode = "group",
+         showlegend = FALSE,
+         width = 800, height = 800)
+
+# Update marker color
+plot_top_carriers %>% 
+  layout(plot_bgcolor = "rgba(0,0,0,0)", paper_bgcolor = "rgba(0,0,0,0)",
+         font = list(color = "#333333"),
+         margin = list(b = 0),
+         boxmode = "group",
+         showlegend = FALSE,
+         marker = list(color = c("#FEE08B", "#FDAE61", "#F46D43", "#D53E4F", "#9E0142",
+                                  "#FEE08B", "#FDAE61", "#F46D43", "#D53E4F", "#9E0142")))
+
+
+# Remove the FL_DATE_NEW and Season Column 
+airlines <- dplyr::select(airlines, -FL_DATE_NEW, -season)
+```
+We can see that the carrier with the most frequent departure delay is United Airlines (UA). Meanwhile, the JetBlue Airways (B6) is far less likely to experience a departure delay. 
